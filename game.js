@@ -143,6 +143,25 @@ function getUnitXY(sq) {
   
 }
 
+
+function selectUnit(sq, pos) {
+  
+  var t = getUnitXY(sq);
+  
+  _ctx.beginPath();
+  _ctx.lineWidth = 3;
+  _ctx.strokeStyle = _strokeColorHighlight;
+  _ctx.rect(t[0]-1, t[1]-1, 35, 29);
+  _ctx.stroke();
+  // set unit to be active
+  sq.unit.active = 1;
+  // update the main array
+  _mapArray[pos] = sq;
+  // set the text
+  setUnitText(sq.unit);
+  
+}
+
 // loop through all units and make sure none are active
 function deselectUnit(sq) {
 
@@ -158,6 +177,8 @@ function deselectUnit(sq) {
     drawUnit(img, strokeColor, t[0], t[1]);
     // update the main array
     _mapArray[pos] = sq;
+    // clear out any text
+    clearUnitText();
   }
 }
 
@@ -176,7 +197,10 @@ function setTerrainText(txt) {
   document.getElementById("tdTerrain").innerHTML = txt;
 }
 
-function setUnitText(txt) {
+function setUnitText(unit) {
+  var txt = "<font color=\"#ffffff\">Unit:&nbsp;<b>" + unit.type + " " + unit.size + "</b></font>" + 
+    "<font size=\"2\" color=\"#ffffff\"><br>Movement: " + unit.move_cur + 
+    "<br>Effectiveness: " + unit.eff + " </font>"
   document.getElementById("tdUnit").innerHTML = txt;
 }
 
@@ -278,9 +302,7 @@ function moveUnit(fromSq, toSq) {
   
   drawUnit(img, _strokeColorHighlight, x, y);
 
-  setUnitText("<font color=\"#ffffff\">Unit:&nbsp;<b>" + unit.type + " " + unit.size + "</b></font>" + 
-    "<font size=\"2\" color=\"#ffffff\"><br>Movement: " + unit.move_cur + 
-    "<br>Effectiveness: " + unit.eff + " </font>"); 
+  setUnitText(unit); 
 
 
 }
@@ -310,129 +332,71 @@ function doMouseDown(evt) {
 
   // is there already an active square and same as what we just clicked?
   if ((_activeSq !== null) && (_activeSq == sq)) {
-    alertMessage("(_activeSq !== null) && (_activeSq == sq)");
+    alertMessage("_activeSq and sq are the same");
     // if there is an already selected unit in it, we want to deselect that unit
     if (unit.active == 1) {
-    alertMessage("(_activeSq.unit.active == 1)");
+    alertMessage("already an active unit here");
       deselectUnit(sq);
       clearUnitText();
       _activeSq = null;
       return;
       }
   }  
-
-  // get the x and y 
-  //t = getUnitXY(sq);
-
-  // if no active square, and there's a player's unit, make it active 
-  if ((_activeSq === null) && (unit !== null) && (unit.player == "human")) {
-    alertMessage("((_activeSq === null) && (unit !== null) && (unit.player == human))");
-      // if there's a unit there, it needs to be a friendly unit 
-      // if the unit is not active, make it so
-      if (unit.active === 0) {
-        alertMessage("(unit.active === 0)");
-        // draw highlight border
-        _ctx.beginPath();
-        _ctx.lineWidth = 3;
-        _ctx.strokeStyle = _strokeColorHighlight;
-        _ctx.rect(t[0]-1, t[1]-1, 35, 29);
-        _ctx.stroke();
-        // set unit to be active
-        unit.active = 1;
-        // update the main array
-        sq.unit = unit;
-        _mapArray[pos] = sq;
-        // set display text
-        setUnitText("<font color=\"#ffffff\">Unit:&nbsp;<b>" + unit.type + " " + unit.size + "</b></font>" + 
-          "<font size=\"2\" color=\"#ffffff\"><br>Movement: " + unit.move_cur + 
-          "<br>Effectiveness: " + unit.eff + " </font>"); 
-        // store as well
-        _activeSq = sq;
-        // can just leave now
-        return;
   
-      }
+  // if no active square, and there's a player's unit, make it active 
+  if ((_activeSq === null) && (unit !== null) && (unit.player == "human") && (unit.active === 0)) {
+    alertMessage("no active square and clicked on player unit");
+      // if the unit is not active, make it so
+      selectUnit(sq, pos);
+      // set display text
+      setUnitText(unit); 
+      // store as well
+      _activeSq = sq;
+      // can just leave now
+      return;
 
     }
 
-  // we have an active square, but 
-
-  // if we have an active square with a friendly unit that has movement left and they clicked in valid empty square, 
-  // move the unit
-  
-  
-  
-  if ((_activeSq !== null) && (_activeSq.unit !== null) && (_activeSq.unit.player == "human") && 
-    (_activeSq.unit.move_cur > 0)) {
-      alertMessage("((_activeSq !== null) && (_activeSq.unit !== null) && (_activeSq.unit.player == human) && (_activeSq.unit.move_cur > 0))");
-      // are we in an adjacent space?
-      if (isAdjacent(_activeSq, sq)) {
-        alertMessage("(isAdjacent(_activeSq, sq))");        
-        // now see if empty
-        if (isEmpty(sq)) {
-          alertMessage("(isEmpty(sq))");        
-          // do the move
+  // if active square, is the current seelcted square adjacent?
+  if ((_activeSq !== null) && (isAdjacent(_activeSq, sq))) {
+    alertMessage("active square and selected square is adjacent");    
+    // if empty and unit has move left, move there
+    if ((isEmpty(sq)) && (_activeSq.unit.move_cur > 0)) {
           moveUnit(_activeSq, sq);
-      
-        }
-        else {
-          // not empty, so now check to see what is there
-          if (getUnitPlayer == "ai") {
-            alertMessage("(getUnitPlayer == ai)");        
-            // attack
-          }
-          else {
-            alertMessage("(getUnitPlayer == human)");        
-            // do nothing, a friendly
-          }
-        }
-      }
-      else {
-        // they picked a square not adjacent, so basically do nothing but keep the
-        // active square where it was 
-        if (isAdjacent(_activeSq, sq)) {
-          alertMessage("(isAdjacent(_activeSq, sq))");        
-          // now see if empty
-          if (isEmpty(sq)) {
-            alertMessage("(isEmpty(sq))");        
-            // do the move
-            moveUnit(_activeSq, sq);
-        
-          }
-          else {
-            // not empty, so now check to see what is there
-            if (getUnitPlayer == "ai") {
-              alertMessage("(getUnitPlayer == ai)");        
-              // attack
-            }
-            else {
-              alertMessage("(getUnitPlayer == human)");        
-              // do nothing, a friendly
-            }
-          }
-        }
-
-        sq = _activeSq;
-      }
-
+    }
+    // if not empty, and there is friendly there, just bail 
+    else if ((!isEmpty(sq)) && (sq.unit.player == "human")) {
+      alertMessage("friendly in our way ... bail");
+      return;
+    }
+    // if not emoty, there is enemy and haven't attacked yet, attack
+    else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 0)) {
+      alertMessage("attack an enemy");
+    }
+    // if not empty, there is enemy but we have attacked, just bail 
+    else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 1)) {
+      alertMessage("enemy there but already attacked ... bail");
+    }    
+    
   }
-  // no movement left, but can still attack 
-  else if ((_activeSq !== null) && (_activeSq.unit !== null) && (_activeSq.unit.player == "human") && 
-    (_activeSq.unit.move_cur === 0)) {
-      alertMessage("((_activeSq !== null) && (_activeSq.unit !== null) && (_activeSq.unit.player == human) && (_activeSq.unit.move_cur == 0))");
-      
-      // see if they clicked on an 
-      sq = _activeSq;
-
-
+  else if  ((_activeSq !== null) && (!isAdjacent(_activeSq, sq))) {
+    alertMessage("active square and selected square is not adjacent");    
+    // deselect any other unit
+    deselectUnit(_activeSq);
+    // if human player in spot, make that unit active
+    if ((sq.unit !== null) && (sq.unit.player == "human")) {
+      selectUnit(sq);
+    }
+    
   }
   // clicked on a unit, but it is an enemy that is visible
   else if ((unit !== null) && (unit.player == "ai") && (unit.visible == 1)) {
+    alertMessage("clicked on visible enemy unit");
       // it is an enemy unit, so can show some things (but not all)
       setUnitText("<font color=\"#ffffff\">Unit:&nbsp;<b>" + unit.type + " " + unit.size + "</b></font>");    
   
   }
-
+  
   // store this on way out
   _activeSq = sq;
   
@@ -761,7 +725,7 @@ function setupOpfor() {
         eff: "Green",
         name: "rifle" + ctr.toString(),
         player: "ai",
-        visible: 0,  
+        visible: 1,  
         active: 0,
         move_max: 3,
         move_cur: 3,
@@ -799,7 +763,7 @@ function setupOpfor() {
         eff: "Green",
         name: "mg" + ctr.toString(),
         player: "ai",
-        visible: 0,  
+        visible: 1,  
         active: 0,
         move_max: 2,
         move_cur: 2,
@@ -831,7 +795,7 @@ function setupOpfor() {
         eff: "Green",
         name: "sniper" + ctr.toString(),
         player: "ai",
-        visible: 0,  
+        visible: 1,  
         active: 0,
         move_max: 2,
         move_cur: 2,
