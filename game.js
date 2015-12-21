@@ -29,6 +29,24 @@ function alertMessage(txt) {
   }
 }
 
+// return distance between two squares 
+function getDistanceBetweenSquares(x1, y1, x2, y2) {
+  //return Math.abs(row1 - row2) + Math.abs(col1 - col2)
+  
+    var dx = Math.abs(x2 - x1);
+    var dy = Math.abs(y2 - y1);
+
+    var min = Math.min(dx, dy);
+    var max = Math.max(dx, dy);
+
+    var diagonalSteps = min;
+    var straightSteps = max - min;
+
+    return Math.floor(Math.sqrt(2) * diagonalSteps + straightSteps);
+  
+}
+
+
 // used to look for an object within an array
 function contains(a, obj) {
     var i = a.length;
@@ -198,9 +216,51 @@ function setTerrainText(txt) {
 }
 
 function setUnitText(unit) {
-  var txt = "<font color=\"#ffffff\">Unit:&nbsp;<b>" + unit.type + " " + unit.size + "</b></font>" + 
-    "<font size=\"2\" color=\"#ffffff\"><br>Movement: " + unit.move_cur + 
-    "<br>Effectiveness: " + unit.eff + " </font>"
+  
+  var txt = "";
+  var effectiveness = "";
+  
+  txt += "<font color=\"#ffffff\">";
+  
+  txt += "Unit:&nbsp;<b>" + unit.type + " " + unit.size + "</b></font><br>";
+
+  txt += "<font color=\"#ffffff\" size=\"3\">";
+  
+  if (unit.is_suppressed == 1) {
+    txt += "<b>*** Unit is supressed and cannot move or attack. ***</b></br>"
+  }
+  else {
+    if (unit.move_cur > 0) {
+      txt += "Still able to move (" + unit.move_cur + ").<br>"; 
+    }
+    else {
+      txt += "No movement left.<br>"; 
+    }
+
+    if (unit.has_attacked === 0) { 
+      txt += "Still able to attack.<br>";
+    }
+    else {
+      txt += "Already attacked.<br>";
+    }
+  }  
+  
+  if (unit.eff === 0) {
+    effectiveness = "No longer combat effective (black).";
+  }
+  else if (unit.eff == 1) {
+    effectiveness = "Barely combat effective (red).";
+  }
+  else if (unit.eff == 2) {
+    effectiveness = "Not at full combat effectiveness (amber).";
+  }
+  else {
+    effectiveness = "Full combat effectiveness (green).";
+  }
+  
+  txt += effectiveness + "<br>";
+  txt += "</font>";
+
   document.getElementById("tdUnit").innerHTML = txt;
 }
 
@@ -307,6 +367,76 @@ function moveUnit(fromSq, toSq) {
 
 }
 
+function doAttack(friendlyUnit, targetSq, pos) {
+
+  var terrainMod = 0;
+  var attackNum = 0; 
+  var damage = 0;
+  var roll = 0;
+  var enemyUnit = null;
+  var arrayPos = 0;
+  var effMod = 0;
+  
+  // store enemy unit
+  enemyUnit = targetSq.unit;
+  
+  // set the has_attacked property to 1
+  friendlyUnit.has_attacked = 1;
+  _mapArray[pos].sq = friendlyUnit;
+    
+  // quick check, if combat effectivenss is "black" (0), just bail
+  if (friendlyUnit.eff === 0) {
+    return;
+  }
+  
+  // need to determine attack number; this is unit attack base - effectiveness modifier - terrain modifier 
+  if ((targetSq.terrain == "Woods") || (targetSq.terrain == "Rocky")) {
+    terrainMod = -1;  
+  }  
+  
+  if (friendlyUnit.eff == 1) {
+    effMod = -2;
+  }
+  else if (friendlyUnit.eff == 2) {
+    effMod = -1;
+  }
+  
+  attackNum = friendlyUnit.attack - effMod - terrainMod; 
+  
+  // pick a random number from 1 - 10 and see if attack num is below that 
+  roll = randomIntFromInterval(1, 10);
+  
+  alert("attackNum: " + attackNum + ", roll: " + roll);
+  
+  if (roll < attackNum) {
+    // hit!
+    alertMessage("unit hit!");
+    damage =  randomIntFromInterval(1, 10);
+    alert("damage: " + damage);
+    if (damage <= 8) {
+        enemyUnit.eff--;
+        alert("unit lost effectiveness");
+    }
+    
+    // certain types of unit cause supression
+    if ((friendlyUnit.type == "mg") || (friendlyUnit.type == "sniper") || (friendlyUnit.type == "mortar")) {
+      enemyUnit.is_suppressed = 1;
+      alertMessage("unit supressed!");
+
+    }
+  
+  }
+
+  // update text (since we attacked)
+  setUnitText(friendlyUnit);
+  
+  // update the unit that was attacked 
+  arrayPos = getArrayPosforRowCol(_mapArray, targetSq.row, targetSq.col);
+  _mapArray[arrayPos].unit = enemyUnit;
+}
+ 
+
+  
 // capture mouse down  
 function doMouseDown(evt) {
 
@@ -357,6 +487,9 @@ function doMouseDown(evt) {
 
     }
 
+  // can we tell distance?
+  alert(getDistanceBetweenSquares(_activeSq.row, _activeSq.col, sq.row, sq.col));
+  
   // if active square, is the current seelcted square adjacent?
   if ((_activeSq !== null) && (isAdjacent(_activeSq, sq))) {
     alertMessage("active square and selected square is adjacent");    
@@ -371,7 +504,9 @@ function doMouseDown(evt) {
     }
     // if not emoty, there is enemy and haven't attacked yet, attack
     else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 0)) {
-      alertMessage("attack an enemy");
+      doAttack(_activeSq.unit, sq, pos);
+      // don't swap out acive square
+      return; 
     }
     // if not empty, there is enemy but we have attacked, just bail 
     else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 1)) {
@@ -387,6 +522,10 @@ function doMouseDown(evt) {
     if ((sq.unit !== null) && (sq.unit.player == "human")) {
       selectUnit(sq);
     }
+    else {
+      _activeSq = null;
+      return;
+    }
     
   }
   // clicked on a unit, but it is an enemy that is visible
@@ -397,9 +536,17 @@ function doMouseDown(evt) {
   
   }
   
+  // if we got this far and the active unit has no movement or attack left, deselect it
+  /*
+  if ((_activeSq.unit.move_cur === 0) && (_activeSq.unit.has_attacked == 1)) {
+    _activeSq = null;
+    deselectUnit(_activeSq);
+    return;
+  }
+  */
+  
   // store this on way out
   _activeSq = sq;
-  
 
 }
 
@@ -499,16 +646,16 @@ function getUnitStrokeColor(unit) {
     strokeColor = "#c0c0c0"; // ai always shows grey
   }
   else {
-    if (unit.eff == "Green") {
+    if (unit.eff == 3) {
       strokeColor = "#00ff00";
     }
-    if (unit.eff == "Amber") {
+    if (unit.eff == 2) {
       strokeColor = "#ffff00";
     }
-    if (unit.eff == "Red") {
+    if (unit.eff == 1) {
       strokeColor = "#ff0000";
     }
-    if (unit.eff == "Black") {
+    if (unit.eff === 0) {
       strokeColor = "#000000";
     }
   }
@@ -563,7 +710,7 @@ function setupFriendlies() {
   unit = {
       type: "Infantry",
       size: "Platoon",
-      eff: "Green",
+      eff: 3,
       name: "alpha",
       player: "human",
       visible: 1,
@@ -572,7 +719,8 @@ function setupFriendlies() {
       move_cur: 3,
       range: 1,
       has_attacked: 0,
-      attack: 4
+      is_supressed: 0,
+      attack: 6
   };
   _friendlyArray.push(unit);
   pos = getArrayPosforRowCol(_mapArray, 1, 6);
@@ -583,7 +731,7 @@ function setupFriendlies() {
   unit = {
       type: "Infantry",
       size: "Platoon",
-      eff: "Green",
+      eff: 3,
       name: "bravo",
       player: "human",
       visible: 1,  
@@ -592,7 +740,8 @@ function setupFriendlies() {
       move_cur: 3,
       range: 1,
       has_attacked: 0,
-      attack: 4
+      is_supressed: 0,
+      attack: 6
   };
   _friendlyArray.push(unit);
   pos = getArrayPosforRowCol(_mapArray, 5, 4);
@@ -603,7 +752,7 @@ function setupFriendlies() {
   unit = {
       type: "Infantry",
       size: "Platoon",
-      eff: "Green",
+      eff: 3,
       name: "charlie",
       player: "human",
       visible: 1,
@@ -612,7 +761,8 @@ function setupFriendlies() {
       move_cur: 3,
       range: 1,
       has_attacked: 0,
-      attack: 5
+      is_supressed: 0,
+      attack: 6
   };
   _friendlyArray.push(unit);
   pos = getArrayPosforRowCol(_mapArray, 5, 8);
@@ -624,7 +774,7 @@ function setupFriendlies() {
   unit = {
       type: "MG",
       size: "Team",
-      eff: "Green",
+      eff: 3,
       name: "delta",
       player: "human",
       visible: 1,  
@@ -633,7 +783,8 @@ function setupFriendlies() {
       move_cur: 2,
       range: 3,
       has_attacked: 0,
-      attack: 5
+      is_supressed: 0,
+      attack: 6
   };
   _friendlyArray.push(unit);
   pos = getArrayPosforRowCol(_mapArray, 4, 6);
@@ -645,7 +796,7 @@ function setupFriendlies() {
   unit = {
       type: "Mortar",
       size: "Section",
-      eff: "Green",
+      eff: 3,
       name: "echo",
       player: "human",
       visible: 1,  
@@ -654,6 +805,7 @@ function setupFriendlies() {
       move_cur: 2,
       range: 5,
       has_attacked: 0,
+      is_supressed: 0,
       attack: 7
   };
   _friendlyArray.push(unit);
@@ -666,7 +818,7 @@ function setupFriendlies() {
   unit = {
       type: "HQ",
       size: "Section",
-      eff: "Green",
+      eff: 3,
       name: "foxtrot",
       player: "human",
       visible: 1,  
@@ -675,6 +827,7 @@ function setupFriendlies() {
       move_cur: 3,
       range: 1,
       has_attacked: 0,
+      is_supressed: 0,
       attack: 2
   };
   _friendlyArray.push(unit);
@@ -722,7 +875,7 @@ function setupOpfor() {
       unit = {
         type: "Infantry",
         size: "Squad",
-        eff: "Green",
+        eff: 3,
         name: "rifle" + ctr.toString(),
         player: "ai",
         visible: 1,  
@@ -730,6 +883,7 @@ function setupOpfor() {
         move_max: 3,
         move_cur: 3,
         has_attacked: 0,
+        is_supressed: 0,
         range: 1,
         attack: 3
       };
@@ -760,7 +914,7 @@ function setupOpfor() {
     unit = {
         type: "MG",
         size: "Team",
-        eff: "Green",
+        eff: 3,
         name: "mg" + ctr.toString(),
         player: "ai",
         visible: 1,  
@@ -769,6 +923,7 @@ function setupOpfor() {
         move_cur: 2,
         range: 3,
         has_attacked: 0,
+        is_supressed: 0,
         attack: 5
     };
     _opforArray.push(unit);
@@ -792,7 +947,7 @@ function setupOpfor() {
     unit = {
         type: "Sniper",
         size: "Team",
-        eff: "Green",
+        eff: 3,
         name: "sniper" + ctr.toString(),
         player: "ai",
         visible: 1,  
@@ -801,6 +956,7 @@ function setupOpfor() {
         move_cur: 2,
         range: 5,
         has_attacked: 0,
+        is_supressed: 0,
         attack: 3
     };
     _opforArray.push(unit);
