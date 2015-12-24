@@ -17,11 +17,18 @@ var _imgInfPlatoon = new Image();
 var _imgSniperTeam = new Image();
 var _activeSq = null;
 var _strokeColorHighlight = "#0000ff";
-var _debugOn = true;
+var _turnCurrent = "ai";
+var _turnNumber = 0;
+var _debugOn = false;
 
 // ==========================
 // **** helper functions ***
 // ==========================
+
+function endTurn() {
+  // just switch turn
+  switchTurn();
+}
 
 function alertMessage(txt) {
   if (_debugOn) {
@@ -106,6 +113,70 @@ function getMousePos(canvas, evt) {
 // ==========================
 // **** mainfunctions ***
 // ==========================
+
+// set up the game itself
+function switchTurn() {
+  
+  var txt = "";
+  var sq = null;
+  
+  // loop through all the units and reset move, attack and supression flag
+  for (var x=0; x < _mapArray.length; x++) {
+      if (_mapArray[x].unit != null) {
+        sq = _mapArray[x];
+        sq.unit.move_cur = sq.unit.move_max;
+        sq.unit.is_suppressed = 0;
+        sq.unit.has_attacked = 0;
+        _mapArray[x].sq = sq;
+      }
+  }
+  
+  // increment the turn counter and flip whose turn it is
+  _turnNumber++;
+  txt = "Turn #" + _turnNumber + ":&nbsp;";
+  if (_turnCurrent == "ai") {
+    _turnCurrent = "player";
+    txt += "Player's ";
+  }
+  else {
+    _turnCurrent = "ai";
+    txt += "Computer's ";
+  }
+  
+  // finish the div text 
+  txt += "Turn";
+  document.getElementById("lblTurnText").innerHTML = txt;
+  
+  // flip around the images 
+  if (_turnCurrent == "ai") {
+    document.getElementById("imgEndTurn").src = "end_turn_inactive_40x80.png";
+  }
+  else {
+    document.getElementById("imgEndTurn").src = "end_turn_active_40x80.png";
+  }
+  
+  // if we flipped to ai, need to jump out
+  if (_turnCurrent == "ai") {
+    doComputerTurn();
+  }
+  
+  
+}
+
+// computer turn
+function doComputerTurn() {
+  
+  // for computer, deselect any player units and get rid of active square
+  deselectUnit(_activeSq);
+  _activeSq = null;
+  // clear text labels
+  clearTerrainText();
+  clearUnitText(); 
+  
+  setTimeout(switchTurn, 3000);
+  
+}
+
 
 // setup map array
 function setupMapArray() {
@@ -239,6 +310,7 @@ function setUnitText(unit) {
 
     if (unit.has_attacked === 0) { 
       txt += "Still able to attack.<br>";
+      txt += "Attack range: " + unit.range + "<br>";
     }
     else {
       txt += "Already attacked.<br>";
@@ -376,9 +448,22 @@ function doAttack(friendlyUnit, targetSq, pos) {
   var enemyUnit = null;
   var arrayPos = 0;
   var effMod = 0;
+  var strokeColor = "";
+  var img = null;
+  var t = null; 
   
   // store enemy unit
   enemyUnit = targetSq.unit;
+  
+  // if enemy wasn't already visible, draw the unit make it visible
+  if (enemyUnit.visible === 0) {
+    enemyUnit.visible = 1;
+    strokeColor = getUnitStrokeColor(sq.unit);
+    img = getUnitImage(sq.unit);
+    t = getUnitXY(sq);
+    drawUnit(img, strokeColor, t[0], t[1]);
+    
+  }
   
   // set the has_attacked property to 1
   friendlyUnit.has_attacked = 1;
@@ -406,16 +491,15 @@ function doAttack(friendlyUnit, targetSq, pos) {
   // pick a random number from 1 - 10 and see if attack num is below that 
   roll = randomIntFromInterval(1, 10);
   
-  alert("attackNum: " + attackNum + ", roll: " + roll);
+  alertMessage("attackNum: " + attackNum + ", roll: " + roll);
   
-  if (roll < attackNum) {
+  if (roll <= attackNum) {
     // hit!
-    alertMessage("unit hit!");
     damage =  randomIntFromInterval(1, 10);
-    alert("damage: " + damage);
+    alertMessage("damage: " + damage);
     if (damage <= 8) {
         enemyUnit.eff--;
-        alert("unit lost effectiveness");
+        alertMessage("unit lost effectiveness");
     }
     
     // certain types of unit cause supression
@@ -488,7 +572,7 @@ function doMouseDown(evt) {
     }
 
   // can we tell distance?
-  alert(getDistanceBetweenSquares(_activeSq.row, _activeSq.col, sq.row, sq.col));
+  alertMessage(getDistanceBetweenSquares(_activeSq.row, _activeSq.col, sq.row, sq.col));
   
   // if active square, is the current seelcted square adjacent?
   if ((_activeSq !== null) && (isAdjacent(_activeSq, sq))) {
@@ -719,7 +803,7 @@ function setupFriendlies() {
       move_cur: 3,
       range: 1,
       has_attacked: 0,
-      is_supressed: 0,
+      is_suppressed: 0,
       attack: 6
   };
   _friendlyArray.push(unit);
@@ -740,7 +824,7 @@ function setupFriendlies() {
       move_cur: 3,
       range: 1,
       has_attacked: 0,
-      is_supressed: 0,
+      is_suppressed: 0,
       attack: 6
   };
   _friendlyArray.push(unit);
@@ -761,7 +845,7 @@ function setupFriendlies() {
       move_cur: 3,
       range: 1,
       has_attacked: 0,
-      is_supressed: 0,
+      is_suppressed: 0,
       attack: 6
   };
   _friendlyArray.push(unit);
@@ -783,7 +867,7 @@ function setupFriendlies() {
       move_cur: 2,
       range: 3,
       has_attacked: 0,
-      is_supressed: 0,
+      is_suppressed: 0,
       attack: 6
   };
   _friendlyArray.push(unit);
@@ -805,7 +889,7 @@ function setupFriendlies() {
       move_cur: 2,
       range: 5,
       has_attacked: 0,
-      is_supressed: 0,
+      is_suppressed: 0,
       attack: 7
   };
   _friendlyArray.push(unit);
@@ -827,7 +911,7 @@ function setupFriendlies() {
       move_cur: 3,
       range: 1,
       has_attacked: 0,
-      is_supressed: 0,
+      is_suppressed: 0,
       attack: 2
   };
   _friendlyArray.push(unit);
@@ -883,7 +967,7 @@ function setupOpfor() {
         move_max: 3,
         move_cur: 3,
         has_attacked: 0,
-        is_supressed: 0,
+        is_suppressed: 0,
         range: 1,
         attack: 3
       };
@@ -923,7 +1007,7 @@ function setupOpfor() {
         move_cur: 2,
         range: 3,
         has_attacked: 0,
-        is_supressed: 0,
+        is_suppressed: 0,
         attack: 5
     };
     _opforArray.push(unit);
@@ -956,7 +1040,7 @@ function setupOpfor() {
         move_cur: 2,
         range: 5,
         has_attacked: 0,
-        is_supressed: 0,
+        is_suppressed: 0,
         attack: 3
     };
     _opforArray.push(unit);
