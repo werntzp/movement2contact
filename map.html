@@ -4,8 +4,12 @@
     <script src="tuple.js"></script>
 </head>  
 <body style="background-color: #000000;">
-<h1 style="color: #00ff00; font-weight: bold;">Movement to Contact</h1>
-  
+
+<table width="650px;">
+<tr><td><h1 style="color: #00ff00; font-weight: bold;">Movement to Contact</h1></td>
+</tr>  
+</table>
+
 <table border="0">
 <tr>
 <td>
@@ -13,16 +17,16 @@
     <canvas id="myCanvas" width="675" height="1200"></canvas>
 </div>  
 </td>
-
-<script>
-  // organize all the arrays
-  setupMapArray();
-  setupOpfor();
-  setupFriendlies();
-  drawMap();
-</script> 
-
 <td valign="top">
+<table width="225px;">
+<tr>
+<td style="color: #ffffff;"><center><h3 id="lblTurnText"></h3>
+  <img id="imgEndTurn" onclick="javascript:endTurn();" src="end_turn_active_40x80.png" width="75px" height="35px" /> &nbsp;
+  </center></td> 
+  </tr>
+  <tr>
+</table>
+  
   <table style="font-size: 20;" width="200">
     <tr><td id="tdTerrain"></td></tr>
     <tr><td id="tdUnit"></td></tr>
@@ -41,5 +45,15 @@
 -->
 </td></tr>
 </table>  
+
+<script>
+  // organize all the arrays
+  setupMapArray();
+  setupOpfor();
+  setupFriendlies();
+  drawMap();
+  switchTurn();
+</script> 
+  
 </body>
 </html>
