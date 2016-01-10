@@ -299,11 +299,11 @@ function setupMapArray() {
       // randomize color of hex (lt green, dark green, brown)
       rnd = getRandomNum(1, 10);
       if (rnd <= 7) {
-        terrainType = "Grassy";
-        terrainColor = "#009900"; // green (grassy/open)
+        terrainType = "Scrub";
+        terrainColor = "#BDB76B"; // tan (scrub/open)
       } else if (rnd >= 9) {
         terrainType = "Woods";
-        terrainColor = "#006600"; // dark green (woods/rough)
+        terrainColor = "#688E23"; // 006600 dark green (woods/rough)
       } else {
         terrainType = "Rocky";
         terrainColor = "#996600"; // brown (rocky)
@@ -347,8 +347,6 @@ function getUnitXY(sq) {
 // ==========================
 function selectUnit(sq, pos) {
 
-  alertMessage("*** selectUnit ***");
-  
   var t = getUnitXY(sq);
 
   _ctx.beginPath();
@@ -417,7 +415,7 @@ function setTerrainText(txt) {
   } else if (txt == "Woods") {
     lbl += "<br><font size=\"3\">Woods provide an advantage to a defending unit.</font>";
   } else {
-    lbl += "<br><font size=\"3\">Grassy terrain does not provide any advantages on defense.</font>";
+    lbl += "<br><font size=\"3\">Scrub is relatively open and does not provide any advantages on defense.</font>";
   }
   document.getElementById("lblTerrain").innerHTML = lbl;
 }
@@ -544,6 +542,15 @@ function drawMapSquare(sq) {
   _ctx.rect(y, x, _squareSize, _squareSize);
   _ctx.fill();
   _ctx.stroke();
+  
+  if (_debugOn) {
+    _ctx.font = "8px";
+    _ctx.fillStyle = "#0000";
+    _ctx.fillText(sq.row + "," + sq.col, y + 2, x + 10);
+    _ctx.strokeText(sq.row + "," + sq.col,  y + 2, x + 10);
+  }
+
+  
   _ctx.closePath();
 
 }
@@ -675,8 +682,6 @@ function doAttack(friendlyUnit, targetSq, pos) {
     }
 
   }
-
-
   
   // update text (since we attacked)
   if (friendlyUnit.player == "human") {
@@ -684,15 +689,15 @@ function doAttack(friendlyUnit, targetSq, pos) {
   }
 
   // if enemy unit has gone to black, just get rid of it. 
+  arrayPos = getArrayPosforRowCol(_mapArray, targetSq.row, targetSq.col);
   if ((enemyUnit.eff === 0) && (enemyUnit.player == "ai")) {
-    alertMessage("unit elimated!");
+    alertMessage("unit " + targetSq.unit.name + " at row " + targetSq.row + ", col " + targetSq.col + " eliminated!");
     attackMsg = "Unit is no longer combat effective!";
     _mapArray[arrayPos].unit = null;
     // redraw that map square since unit gone
     drawMapSquare(targetSq);
   } else {
     // update the unit that was attacked 
-    arrayPos = getArrayPosforRowCol(_mapArray, targetSq.row, targetSq.col);
     _mapArray[arrayPos].unit = enemyUnit;
   }
 
@@ -732,6 +737,8 @@ function doMouseDown(evt) {
   sq = _mapArray[pos];
   unit = sq.unit;
 
+  alertMessage("User clicked into row " + row + ", col " + col);
+  
   // show some terrain info 
   setTerrainText(sq.type);
 
@@ -768,6 +775,7 @@ function doMouseDown(evt) {
   // if active square, is the current seelcted square adjacent?
   if ((_activeSq !== null) && (isAdjacent(_activeSq, sq))) {
     alertMessage("active square and selected square is adjacent");
+    alertMessage("adjacent square isEmpty? " + isEmpty(sq));
     // if empty and unit has move left, move there
     if ((isEmpty(sq)) && (_activeSq.unit !== null) && (_activeSq.unit.move_cur > 0)) {
       moveUnit(_activeSq, sq);
@@ -873,7 +881,16 @@ function drawMap() {
       _ctx.rect(y, x, _squareSize, _squareSize);
       _ctx.fill();
       _ctx.stroke();
+      
+      if (_debugOn) {
+        _ctx.font = "8px";
+        _ctx.fillStyle = "#0000";
+        _ctx.fillText(row + "," + col, y + 2, x + 10);
+        _ctx.strokeText(row + "," + col,  y + 2, x + 10);
+      }
+      
       _ctx.closePath();
+
     }
 
   }
