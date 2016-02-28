@@ -183,6 +183,9 @@ function doComputerTurn() {
   var agg = 0;
   var doMove = true; 
   var justAttacked = false;
+  var currentSq = null;
+  var targetSq = null;
+  var ctr = 0; 
   
   // for computer, deselect any player units and get rid of active square
   deselectUnit(_activeSq);
@@ -192,9 +195,10 @@ function doComputerTurn() {
   clearUnitText();
 
   // iterate through enemy units, looking for ones not suppressed and not on black effectiveness
-  for (var ctr = 0; ctr < _mapArray.length; ctr++) {
+  for (ctr = 0; ctr < _mapArray.length; ctr++) {
     unit = _mapArray[ctr].unit;
-
+    //currentSq = _mapArray[ctr];
+    
     // get the row and pos
     row = _mapArray[ctr].row;
     col = _mapArray[ctr].col;
@@ -245,21 +249,37 @@ function doComputerTurn() {
               // break out of loop, we're done
               break;
           }
+          else {
+            // not next to player unit, but is there one within range? 
+            if (unit.range > 1) {
+              // go look for unit's within range
+              // long way -- iterate through map, check each square, see if has a player unit and they are
+              // within range; if so, attack
+              for (var z = 0; z < _mapArray.length; z++) {
+                targetSq = _mapArray[z];
+                if ((targetSq.unit != null) && (targetSq.unit.player = "human") && 
+                      (getDistanceBetweenSquares(row, col, targetSq.row, targetSq.col) <= unit.range)) {
+                      alertMessage("*** would be able to attack ***");
+              }
+            }
+          }
         }
+       }
       }
-    }
     // if not, determie how aggressive (if aggressive, find nearest friendly unit and move towards them; 
     // if not aggressive, stay still); sniper units will be less aggressive in general; if moved, 
     // make unit visible
-    else {
+    /*
+      else {
       agg = getRandomNum(10);
       // mod that num based on unit type 
       if ((unit !== null) && (unit.type == "sniper")) {
         agg--;
       }
+    */
       
     }
-    
+      
     // figure out movement
     if (doMove) {
         // loop through map array, finding player units, see how far and just keep closest  
@@ -278,8 +298,16 @@ function doComputerTurn() {
     
   }
   
+  
+  
+  
   setTimeout(switchTurn, 3000);
 
+  // walk through all units and reset the flags
+  for (ctr = 0; ctr < _mapArray.length; ctr++) {
+    _mapArray[ctr].unit.has_attacked = 0;
+  }  
+  
 }
 
 
@@ -302,7 +330,7 @@ function setupMapArray() {
         terrainType = "Scrub";
         terrainColor = "#BDB76B"; // tan (scrub/open)
       } else if (rnd >= 9) {
-        terrainType = "Woods";
+        terrainType = "Brush";
         terrainColor = "#688E23"; // 006600 dark green (woods/rough)
       } else {
         terrainType = "Rocky";
@@ -411,9 +439,9 @@ function setTerrainText(txt) {
   lbl += "<font color=\"#ffffff\">Terrain:&nbsp;<b>" + txt + "</b></font><br>"
 
   if (txt == "Rocky") {
-    lbl += "<br><font size=\"3\">Rocky terrain provides an advantage to a defending unit.</font>";
-  } else if (txt == "Woods") {
-    lbl += "<br><font size=\"3\">Woods provide an advantage to a defending unit.</font>";
+    lbl += "<br><font size=\"3\">Rocky terrain provides an advantage to a defending unit but costs extra to move through it.</font>";
+  } else if (txt == "Brush") {
+    lbl += "<br><font size=\"3\">Brush provide an advantage to a defending unit.</font>";
   } else {
     lbl += "<br><font size=\"3\">Scrub is relatively open and does not provide any advantages on defense.</font>";
   }
@@ -463,7 +491,7 @@ function setUnitText(unit) {
     }
 
   } else {
-    txt += "Enemy " + unit.type + " " + unit.size + ".<br></font>";
+    txt += "Enemy " + unit.type + " " + unit.size + "<br></font>";
     txt += "<font color=\"#ffffff\" size=\"3\">";
     if (unit.eff === 3) {
       effectiveness = "This unit appears to be at full strength.";
@@ -582,14 +610,22 @@ function moveUnit(fromSq, toSq) {
   // redraw the map square to overwrite the unit
   drawMapSquare(sq);
 
-  // take the unit and drop off one move
-  unit.move_cur -= 1;
-
   // now, drop that unit into the new square
   sq = _mapArray[posTo];
   sq.unit = unit;
   _mapArray[posTo].sq = sq;
 
+  // take the unit and drop off one move, unless moving into rockey, then drop two
+  if (sq.type == "Rocky") {
+     unit.move_cur -= 2;   
+  }
+  else {
+    unit.move_cur -= 1;
+  }
+  if (unit.move_cur < 0) {
+    unit.move_cur = 0;
+  }
+  
   // finally, re-draw the unit at the new spot 
   y = ((sq.row - 1) * _squareSize) + 9;
   x = ((sq.col - 1) * _squareSize) + 9;
@@ -664,6 +700,13 @@ function doAttack(friendlyUnit, targetSq, pos) {
 
   alertMessage("attackNum: " + attackNum + ", roll: " + roll);
 
+  // if enemy unit attacking, want to have more information in the attack message
+  if (friendlyUnit.player == "ai") {
+    attackMsg = "The enemy " + friendlyUnit.type + " " + friendlyUnit.size + " attacked your " + targetSq.unit.type + " " + targetSq.unit.size + ". ";
+    
+  }
+  
+  
   if (roll <= attackNum) {
     // hit!
     damage = getRandomNum(1, 10);
@@ -671,7 +714,7 @@ function doAttack(friendlyUnit, targetSq, pos) {
     if (damage <= 8) {
       enemyUnit.eff--;
       alertMessage("unit " + enemyUnit.name + " lost effectiveness, now at " + enemyUnit.eff);
-      attackMsg = "The unit was hit and took damage.";
+      attackMsg += "The unit was hit and took damage.";
     }
 
     // certain types of unit cause supression
@@ -692,7 +735,7 @@ function doAttack(friendlyUnit, targetSq, pos) {
   arrayPos = getArrayPosforRowCol(_mapArray, targetSq.row, targetSq.col);
   if ((enemyUnit.eff === 0) && (enemyUnit.player == "ai")) {
     alertMessage("unit " + targetSq.unit.name + " at row " + targetSq.row + ", col " + targetSq.col + " eliminated!");
-    attackMsg = "Unit is no longer combat effective!";
+    attackMsg += "Unit is no longer combat effective!";
     _mapArray[arrayPos].unit = null;
     // redraw that map square since unit gone
     drawMapSquare(targetSq);
@@ -715,6 +758,7 @@ function doNothing() {
   return;
 }
 
+
 // ==========================
 // capture mouse down  
 // ==========================
@@ -735,8 +779,10 @@ function doMouseDown(evt) {
   col = Math.floor(mousePos.x / _squareSize + 1);
   pos = getArrayPosforRowCol(_mapArray, row, col);
   sq = _mapArray[pos];
-  unit = sq.unit;
-
+  if (sq.unit !== null) {
+    unit = sq.unit;
+  }
+  
   alertMessage("User clicked into row " + row + ", col " + col);
   
   // show some terrain info 
@@ -755,6 +801,16 @@ function doMouseDown(evt) {
     }
   }
 
+  // clicked on a unit, but it is an enemy that is visible
+  if ((_activeSq === null) && (unit !== null) && (unit.player == "ai") && (unit.visible == 1)) {
+    alertMessage("clicked on visible enemy unit");
+    // it is an enemy unit, so can show some things (but not all)
+    setUnitText(unit);
+    _activeSq = null;
+    return;
+  }
+  
+  
   // if no active square, and there's a player's unit, make it active 
   if ((_activeSq === null) && (unit !== null) && (unit.player == "human") && (unit.active === 0)) {
     alertMessage("no active square and clicked on player unit " + unit.name);
@@ -768,10 +824,7 @@ function doMouseDown(evt) {
     return;
 
   }
-
-  // can we tell distance?
-  //alertMessage(getDistanceBetweenSquares(_activeSq.row, _activeSq.col, sq.row, sq.col));
-
+  
   // if active square, is the current seelcted square adjacent?
   if ((_activeSq !== null) && (isAdjacent(_activeSq, sq))) {
     alertMessage("active square and selected square is adjacent");
@@ -828,13 +881,7 @@ function doMouseDown(evt) {
     }
 
   }
-  // clicked on a unit, but it is an enemy that is visible
-  else if ((unit !== null) && (unit.player == "ai") && (unit.visible == 1)) {
-    alertMessage("clicked on visible enemy unit");
-    // it is an enemy unit, so can show some things (but not all)
-    setUnitText(unit);
 
-  }
 
   // if we got this far and the active unit has no movement or attack left, deselect it
   /*
@@ -860,8 +907,9 @@ function drawMap() {
   _canvas = document.getElementById("myCanvas");
   _ctx = _canvas.getContext("2d");
 
-  // add the mouse down capture 
+  // add the mouse captures 
   _canvas.addEventListener("mousedown", doMouseDown, false);
+  //_canvas.addEventListener("mousemove", doMouseOver, false);
   
   // wait until all images are actually loaded before drawing on the map
   _imgInfPlatoon.onload = function() {
