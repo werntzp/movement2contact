@@ -283,7 +283,7 @@ function doComputerTurn() {
     // figure out movement
     if (doMove) {
         // loop through map array, finding player units, see how far and just keep closest  
-      
+        alertMessage("*** in doMove ***");
     }
     
       // now, after moving, anything next to it? Again, if yes, attack; if attacked, make unit visible 
@@ -305,7 +305,10 @@ function doComputerTurn() {
 
   // walk through all units and reset the flags
   for (ctr = 0; ctr < _mapArray.length; ctr++) {
-    _mapArray[ctr].unit.has_attacked = 0;
+    unit = _mapArray[ctr].unit;
+    if (unit !== null) {
+      _mapArray[ctr].unit.has_attacked = 0;
+    }
   }  
   
 }
@@ -382,12 +385,17 @@ function selectUnit(sq, pos) {
   _ctx.strokeStyle = _strokeColorHighlight;
   _ctx.rect(t[0] - 1, t[1] - 1, 35, 29);
   _ctx.stroke();
+  // deselect any other active unit
+  if (_activeSq !== null) {
+    deselectUnit(_activeSq);
+  }
   // set unit to be active
   sq.unit.active = 1;
   // update the main array
   _mapArray[pos] = sq;
   // set the text
   setUnitText(sq.unit);
+  
   
   alertMessage("selected " + sq.unit.name);
 
@@ -416,10 +424,24 @@ function deselectUnit(sq) {
 }
 
 // ==========================
+// clear out last action
+// ==========================
+function clearActionText() {
+  document.getElementById("lblAction").innerHTML = "";
+}
+
+// ==========================
+// set action text
+// ==========================
+function setActionText(txt) {
+  document.getElementById("lblAction").innerHTML = txt;
+}
+
+// ==========================
 // clear out terrain text
 // ==========================
 function clearTerrainText() {
-  document.getElementById("lblTerrain").innerHTML = "";
+  //document.getElementById("lblTerrain").innerHTML = "";
 }
 
 // ==========================
@@ -445,7 +467,7 @@ function setTerrainText(txt) {
   } else {
     lbl += "<br><font size=\"3\">Scrub is relatively open and does not provide any advantages on defense.</font>";
   }
-  document.getElementById("lblTerrain").innerHTML = lbl;
+  //document.getElementById("lblTerrain").innerHTML = lbl;
 }
 
 // ==========================
@@ -459,7 +481,7 @@ function setUnitText(unit) {
   txt += "<font color=\"#ffffff\">";
 
   if (unit.player == "human") {
-    txt += "Unit:&nbsp;<b>" + unit.type + " " + unit.size + "</b></font><br>";
+    txt += "<b>" + unit.type + " " + unit.size + "</b></font><br>";
 
     txt += "<font color=\"#ffffff\" size=\"3\">";
 
@@ -596,7 +618,7 @@ function moveUnit(fromSq, toSq) {
   var sq = null;
   var x = 0;
   var y = 0;
-
+  
   // first, update the array so new map 
   posFrom = getArrayPosforRowCol(_mapArray, fromSq.row, fromSq.col);
   posTo = getArrayPosforRowCol(_mapArray, toSq.row, toSq.col);
@@ -632,12 +654,11 @@ function moveUnit(fromSq, toSq) {
 
   // draw the infantry unit (either squad or platoon)
   img = getUnitImage(unit);
-
   drawUnit(img, _strokeColorHighlight, x, y);
-
   setUnitText(unit);
 
   alertMessage("unit " + unit.name + " moved to row " + toSq.row + ", col " + toSq.col);
+  setActionText("Unit " + unit.name + " moved to row " + toSq.row + ", col " + toSq.col);
 
 }
 
@@ -703,7 +724,6 @@ function doAttack(friendlyUnit, targetSq, pos) {
   // if enemy unit attacking, want to have more information in the attack message
   if (friendlyUnit.player == "ai") {
     attackMsg = "The enemy " + friendlyUnit.type + " " + friendlyUnit.size + " attacked your " + targetSq.unit.type + " " + targetSq.unit.size + ". ";
-    
   }
   
   
@@ -713,7 +733,7 @@ function doAttack(friendlyUnit, targetSq, pos) {
     alertMessage("damage: " + damage);
     if (damage <= 8) {
       enemyUnit.eff--;
-      alertMessage("unit " + enemyUnit.name + " lost effectiveness, now at " + enemyUnit.eff);
+      alertMessage("Unit " + enemyUnit.name + " lost effectiveness, now at " + enemyUnit.eff);
       attackMsg += "The unit was hit and took damage.";
     }
 
@@ -724,6 +744,11 @@ function doAttack(friendlyUnit, targetSq, pos) {
       attackMsg += " It was also suppressed (no movement or attack possible).";
     }
 
+  }
+  else {
+    // not hit, but still want to post message
+    attackMessage = "The unit was attacked but was not hit."
+    
   }
   
   // update text (since we attacked)
@@ -744,10 +769,12 @@ function doAttack(friendlyUnit, targetSq, pos) {
     _mapArray[arrayPos].unit = enemyUnit;
   }
 
-    // pop-up if unit lost effectiveness
-  if (attackMsg !== "") {
-    alert(attackMsg);
-  }
+  setActionText(attackMsg);
+
+  // pop-up if unit lost effectiveness
+  //if (attackMsg !== "") {
+  //  alert(attackMsg);
+  //}
   
 }
 
@@ -792,7 +819,7 @@ function doMouseDown(evt) {
   if ((_activeSq !== null) && (_activeSq == sq)) {
     alertMessage("_activeSq and sq are the same");
     // if there is an already selected unit in it, we want to deselect that unit
-    if (unit.active == 1) {
+    if ((unit !== null) && (unit.active == 1)) {
       alertMessage("already an active unit here");
       deselectUnit(sq);
       clearUnitText();
@@ -806,6 +833,7 @@ function doMouseDown(evt) {
     alertMessage("clicked on visible enemy unit");
     // it is an enemy unit, so can show some things (but not all)
     setUnitText(unit);
+    setActionText("Selected " + unit.name);
     _activeSq = null;
     return;
   }
@@ -818,6 +846,7 @@ function doMouseDown(evt) {
     selectUnit(sq, pos);
     // set display text
     setUnitText(unit);
+    setActionText("Selected " + unit.name);
     // store as well
     _activeSq = sq;
     // can just leave now
@@ -838,9 +867,10 @@ function doMouseDown(evt) {
       alertMessage("friendly in our way ... switch over to that unit");
       selectUnit(sq, pos);
       setUnitText(sq.unit);
+      setActionText("Selected " + sq.unit.name);
       deselectUnit(_activeSq);
     }
-    // if not emoty, there is enemy and haven't attacked yet, attack
+    // if not empty, there is enemy and haven't attacked yet, attack
     else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 0)) {
       doAttack(_activeSq.unit, sq, pos);
       // don't swap out acive square
@@ -859,6 +889,7 @@ function doMouseDown(evt) {
       // deselect any other unit
       deselectUnit(_activeSq);
       selectUnit(sq);
+      setActionText("Selected " + sq.unit.name);
     } else {
       // is there an enemy player there, within range and we haven't attacked yet? 
       if ((sq.unit !== null) && (sq.unit.player == "ai") && (_activeSq.unit !== null) && (_activeSq.unit.has_attacked === 0)) {
@@ -873,7 +904,9 @@ function doMouseDown(evt) {
         return;
         
       } else {
-        // nope, just don't set an active square and bail
+        // nope, just don't set an active square and bail, but deselect any active unit first
+        deselectUnit(_activeSq);
+        clearActionText();
         _activeSq = null;
         return;
 
@@ -894,6 +927,7 @@ function doMouseDown(evt) {
 
   // store this on way out
   _activeSq = sq;
+  alertMessage("active square is " + _activeSq.row + ", " + _activeSq.col);
 
 }
 
