@@ -21,12 +21,6 @@ var _turnCurrent = "ai";
 var _turnNumber = 0;
 var _debugOn = true;
 
-// ==========================
-// when player ends their turn, activate switch turn logic
-// ==========================
-function endTurn() {
-  switchTurn();
-}
 
 // ==========================
 // if debugging on, output to browser console
@@ -38,18 +32,24 @@ function alertMessage(txt) {
 }
 
 // ==========================
-// return distance between two squares 
+// clear out last action
 // ==========================
-function getDistanceBetweenSquares(x1, y1, x2, y2) {
-  var dx = Math.abs(x2 - x1);
-  var dy = Math.abs(y2 - y1);
-  var min = Math.min(dx, dy);
-  var max = Math.max(dx, dy);
-  var diagonalSteps = min;
-  var straightSteps = max - min;
+function clearActionText() {
+  document.getElementById("lblAction").innerHTML = "";
+}
 
-  return Math.floor(Math.sqrt(2) * diagonalSteps + straightSteps);
+// ==========================
+// clear out terrain text
+// ==========================
+function clearTerrainText() {
+  //document.getElementById("lblTerrain").innerHTML = "";
+}
 
+// ==========================
+// clear out unit text
+// ==========================
+function clearUnitText() {
+  document.getElementById("lblUnit").innerHTML = "";
 }
 
 // ==========================
@@ -66,10 +66,590 @@ function contains(a, obj) {
 }
 
 // ==========================
-// used to determine random starting position on map
+// loop through all units and make sure none are active
 // ==========================
-function getRandomNum(min, max) {
-  return Math.floor(Math.random() * (max - min + 1) + min);
+function deselectUnit(sq) {
+
+  var t = null;
+
+  // ignore if no active square
+  if ((sq !== null) && (sq.unit !== null)) {
+    sq.unit.active = 0;
+    // draw that unit with regular color
+    strokeColor = getUnitStrokeColor(sq.unit);
+    img = getUnitImage(sq.unit);
+    t = getUnitXY(sq);
+    drawUnit(img, strokeColor, t[0], t[1]);
+    // update the main array
+    _mapArray[pos] = sq;
+    // clear out any text
+    clearUnitText();
+  }
+}
+
+// ==========================
+// attack function
+// ==========================
+function doAttack(friendlyUnit, targetSq, pos) {
+
+  alertMessage("*** do Attack ***");
+
+  var terrainMod = 0;
+  var attackNum = 0;
+  var damage = 0;
+  var roll = 0;
+  var enemyUnit = null;
+  var arrayPos = 0;
+  var effMod = 0;
+  var strokeColor = "";
+  var img = null;
+  var t = null;
+  var attackMsg = "";
+
+  // store enemy unit
+  enemyUnit = targetSq.unit;
+
+  // if enemy wasn't already visible, draw the unit make it visible
+  if (enemyUnit.visible === 0) {
+    enemyUnit.visible = 1;
+    strokeColor = getUnitStrokeColor(sq.unit);
+    img = getUnitImage(sq.unit);
+    t = getUnitXY(sq);
+    drawUnit(img, strokeColor, t[0], t[1]);
+
+  }
+
+  // set the has_attacked property to 1
+  friendlyUnit.has_attacked = 1;
+  _mapArray[pos].sq = friendlyUnit;
+
+  // quick check, if combat effectivenss is "black" (0), just bail
+  if (friendlyUnit.eff === 0) {
+    return;
+  }
+
+  // need to determine attack number; this is unit attack base - effectiveness modifier - terrain modifier
+  if ((targetSq.terrain == "Woods") || (targetSq.terrain == "Rocky")) {
+    terrainMod = -1;
+  }
+
+  if (friendlyUnit.eff == 1) {
+    effMod = -2;
+  } else if (friendlyUnit.eff == 2) {
+    effMod = -1;
+  }
+
+  attackNum = friendlyUnit.attack - effMod - terrainMod;
+
+  // pick a random number from 1 - 10 and see if attack num is below that
+  roll = getRandomNum(1, 10);
+
+  alertMessage("attackNum: " + attackNum + ", roll: " + roll);
+
+  // if enemy unit attacking, want to have more information in the attack message
+  if (friendlyUnit.player == "ai") {
+    attackMsg = "The enemy " + friendlyUnit.type + " " + friendlyUnit.size + " attacked your " + targetSq.unit.type + " " + targetSq.unit.size + ". ";
+  }
+
+
+  if (roll <= attackNum) {
+    // hit!
+    damage = getRandomNum(1, 10);
+    alertMessage("damage: " + damage);
+    if (damage <= 8) {
+      enemyUnit.eff--;
+      alertMessage("Unit " + enemyUnit.name + " lost effectiveness, now at " + enemyUnit.eff);
+      attackMsg += "The unit was hit and took damage.";
+    }
+
+    // certain types of unit cause supression
+    if ((friendlyUnit.type == "mg") || (friendlyUnit.type == "sniper") || (friendlyUnit.type == "mortar")) {
+      enemyUnit.is_suppressed = 1;
+      alertMessage("unit supressed!");
+      attackMsg += " It was also suppressed (no movement or attack possible).";
+    }
+
+  }
+  else {
+    // not hit, but still want to post message
+    attackMsg += "The unit was attacked but was not hit."
+
+  }
+
+  // update text (since we attacked)
+  if (friendlyUnit.player == "human") {
+    setUnitText(friendlyUnit);
+  }
+
+  // if enemy unit has gone to black, just get rid of it.
+  arrayPos = getArrayPosforRowCol(_mapArray, targetSq.row, targetSq.col);
+  if ((enemyUnit.eff === 0) && (enemyUnit.player == "ai")) {
+    alertMessage("unit " + targetSq.unit.name + " at row " + targetSq.row + ", col " + targetSq.col + " eliminated!");
+    attackMsg += "Unit is no longer combat effective!";
+    _mapArray[arrayPos].unit = null;
+    // redraw that map square since unit gone
+    drawMapSquare(targetSq);
+  } else {
+    // update the unit that was attacked
+    _mapArray[arrayPos].unit = enemyUnit;
+  }
+
+  setActionText(attackMsg);
+
+}
+
+// ==========================
+// computer turn
+// ==========================
+function doComputerTurn() {
+
+  alertMessage("*** doComputerTurn ***");
+
+  var unit = null;
+  var row = 0;
+  var col = 0;
+  var x = 0;
+  var y = 0;
+  var adjRow = 0;
+  var adjCol = 0;
+  var agg = 0;
+  var doMove = true;
+  var justAttacked = false;
+  var currentSq = null;
+  var targetSq = null;
+  var ctr = 0;
+
+  // for computer, deselect any player units and get rid of active square
+  deselectUnit(_activeSq);
+  _activeSq = null;
+  // clear text labels
+  clearTerrainText();
+  clearUnitText();
+
+  // iterate through enemy units, looking for ones not suppressed and not on black effectiveness
+  for (ctr = 0; ctr < _mapArray.length; ctr++) {
+    unit = _mapArray[ctr].unit;
+    //currentSq = _mapArray[ctr];
+
+    // get the row and pos
+    row = _mapArray[ctr].row;
+    col = _mapArray[ctr].col;
+
+    if ((unit !== null) && (unit.player == "ai") && (unit.is_suppressed === 0) && (unit.eff !== 0)) {
+      // first, is there a unit adjacent to it? if yes, and can attack, attack; if attacked, make unit visible
+      alertMessage("found a unit: " + unit.name);
+      justAttacked = false;
+      // set flag we want them to move later
+      doMove = true;
+      for (x = -1; x <= 1; x++) {
+
+        // quick hack; if they attacked, broke out of inner loop but now we need to break out of outer loop
+        if (justAttacked) {
+          break;
+        }
+
+        for (y = -1; y <= 1; y++ ) {
+          adjRow = (row + x);
+          adjCol = (col + y);
+          // make sure we didn't go out of bounds
+          if (adjRow < 1) {
+            adjRow = 1;
+          }
+          if (adjRow > _rows) {
+            adjRow = _rows;
+          }
+          if (adjCol < 1) {
+            adjCol = 1;
+          }
+          if (adjCol > _cols) {
+            adjCol = _cols;
+          }
+
+          // get the map array pos for row
+          pos = getArrayPosforRowCol(_mapArray, adjRow, adjCol);
+          // is there a player unit there?
+          if ((pos !== undefined) && (_mapArray[pos].unit !== null) && (_mapArray[pos].unit.player == "human")) {
+               // attack!
+              alertMessage("next to a player unit, so going to attack row " + adjRow + ", col " + adjCol);
+               doAttack(unit, _mapArray[pos], pos);
+              // make the attackimg unit visible and set their attacked flag
+              _mapArray[ctr].unit.has_attacked = 1;
+              _mapArray[ctr].unit.visible = 1;
+              // they don't want to move away from player unit, do set flag
+              doMove = false;
+              justAttacked = true;
+              // break out of loop, we're done
+              break;
+          }
+          else {
+            // not next to player unit, but is there one within range?
+            if (unit.range > 1) {
+              // go look for unit's within range
+              // long way -- iterate through map, check each square, see if has a player unit and they are
+              // within range; if so, attack
+              for (var z = 0; z < _mapArray.length; z++) {
+                targetSq = _mapArray[z];
+                if ((targetSq.unit != null) && (targetSq.unit.player = "human") &&
+                      (getDistanceBetweenSquares(row, col, targetSq.row, targetSq.col) <= unit.range)) {
+                      alertMessage("*** would be able to attack ***");
+              }
+            }
+          }
+        }
+       }
+      }
+    // if not, determie how aggressive (if aggressive, find nearest friendly unit and move towards them;
+    // if not aggressive, stay still); sniper units will be less aggressive in general; if moved,
+    // make unit visible
+    /*
+      else {
+      agg = getRandomNum(10);
+      // mod that num based on unit type
+      if ((unit !== null) && (unit.type == "sniper")) {
+        agg--;
+      }
+    */
+
+    }
+
+    // figure out movement
+    if (doMove) {
+        // loop through map array, finding player units, see how far and just keep closest
+        alertMessage("*** in doMove ***");
+    }
+
+      // now, after moving, anything next to it? Again, if yes, attack; if attacked, make unit visible
+
+      // if not, see if anything within range (for MG or sniper); if yes. attack; if attacked,
+      // make unit visible
+
+      // add in artificial delay
+
+      // finally, if not next to another unit, percentage chance it is no longer visible
+
+
+  }
+
+
+
+
+  setTimeout(switchTurn, 3000);
+
+  // walk through all units and reset the flags
+  for (ctr = 0; ctr < _mapArray.length; ctr++) {
+    unit = _mapArray[ctr].unit;
+    if (unit !== null) {
+      _mapArray[ctr].unit.has_attacked = 0;
+    }
+  }
+
+}
+
+// ==========================
+// capture mouse down
+// ==========================
+function doMouseDown(evt) {
+
+  var pos = 0;
+  var sq = null;
+  var unit = null;
+  var t = null;
+  var row = 0;
+  var col = 0;
+
+  // get the x and y based on canvas rectangle
+  var mousePos = getMousePos(document.getElementById("myCanvas"), evt);
+
+  // now, figure out where we are at
+  row = Math.floor(mousePos.y / _squareSize + 1);
+  col = Math.floor(mousePos.x / _squareSize + 1);
+  pos = getArrayPosforRowCol(_mapArray, row, col);
+  sq = _mapArray[pos];
+  if (sq.unit !== null) {
+    unit = sq.unit;
+  }
+
+  alertMessage("User clicked into row " + row + ", col " + col);
+  alertMessage(sq);
+
+  // show some terrain info
+  setTerrainText(sq.type);
+
+  // is there already an active square and same as what we just clicked?
+  if ((_activeSq !== null) && (_activeSq == sq)) {
+    alertMessage("_activeSq and sq are the same");
+    // if there is an already selected unit in it, we want to deselect that unit
+    if ((unit !== null) && (unit.active == 1)) {
+      alertMessage("already an active unit here");
+      deselectUnit(sq);
+      clearUnitText();
+      _activeSq = null;
+      return;
+    }
+  }
+
+  // clicked on a unit, but it is an enemy that is visible
+  if ((_activeSq === null) && (unit !== null) && (unit.player == "ai") && (unit.visible == 1)) {
+    alertMessage("clicked on visible enemy unit");
+    // it is an enemy unit, so can show some things (but not all)
+    setUnitText(unit);
+    setActionText("Selected " + unit.name);
+    _activeSq = null;
+    return;
+  }
+
+
+  // if no active square, and there's a player's unit, make it active
+  if ((_activeSq === null) && (unit !== null) && (unit.player == "human") && (unit.active === 0)) {
+    alertMessage("no active square and clicked on player unit " + unit.name);
+    // if the unit is not active, make it so
+    selectUnit(sq, pos);
+    // set display text
+    setUnitText(unit);
+    setActionText("Selected " + unit.name);
+    // store as well
+    _activeSq = sq;
+    // can just leave now
+    return;
+
+  }
+
+  // if active square, is the current seelcted square adjacent?
+  if ((_activeSq !== null) && (isAdjacent(_activeSq, sq))) {
+    alertMessage("active square and selected square is adjacent");
+    alertMessage("adjacent square isEmpty? " + isEmpty(sq));
+    // if empty and unit has move left, move there
+    if ((isEmpty(sq)) && (_activeSq.unit !== null) && (_activeSq.unit.move_cur > 0)) {
+        // going to move, but first need to make sure they have enough move points left
+        if (((sq.type == "Rocky") && (_activeSq.unit.move_cur < 3)) || ((sq.type == "Brush") && (_activeSq.unit.move_cur < 2))) {
+            setActionText("Cannot move into that map square due to lack of movement points.");
+            return;
+        }
+        else {
+            // yup, good to move
+            moveUnit(_activeSq, sq);
+        }
+
+    }
+    // if not empty, and there is friendly there, just bail
+    else if ((!isEmpty(sq)) && (sq.unit.player == "human")) {
+      alertMessage("friendly in our way ... switch over to that unit");
+      selectUnit(sq, pos);
+      setUnitText(sq.unit);
+      setActionText("Selected " + sq.unit.name);
+      deselectUnit(_activeSq);
+    }
+    // if not empty, there is enemy and haven't attacked yet, attack
+    else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 0)) {
+      doAttack(_activeSq.unit, sq, pos);
+      // don't swap out acive square
+      return;
+    }
+    // if not empty, there is enemy but we have attacked, just bail
+    else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 1)) {
+      alertMessage("enemy there but already attacked ... bail");
+      return;
+    }
+
+  } else if ((_activeSq !== null) && (!isAdjacent(_activeSq, sq))) {
+    alertMessage("active square and selected square is not adjacent");
+    // if human player in spot, make that unit active
+    if ((sq.unit !== null) && (sq.unit.player == "human")) {
+      // deselect any other unit
+      deselectUnit(_activeSq);
+      selectUnit(sq);
+      setActionText("Selected " + sq.unit.name);
+    } else {
+      // is there an enemy player there, within range and we haven't attacked yet?
+      if ((sq.unit !== null) && (sq.unit.player == "ai") && (_activeSq.unit !== null) && (_activeSq.unit.has_attacked === 0)) {
+        alertMessage("enemy player in square and we haven't attacked yet");
+        // what is the range?
+        if (getDistanceBetweenSquares(_activeSq.row, _activeSq.col, sq.row, sq.col) <= _activeSq.unit.range) {
+          alertMessage("enemy within range, about to attack!");
+          // actually can do an attack
+          doAttack(_activeSq.unit, sq, pos);
+        }
+        // jump out because we want to keep active square the unit that attacked
+        return;
+
+      } else {
+        // nope, just don't set an active square and bail, but deselect any active unit first
+        deselectUnit(_activeSq);
+        clearActionText();
+        _activeSq = null;
+        return;
+
+      }
+    }
+
+  }
+
+
+  // if we got this far and the active unit has no movement or attack left, deselect it
+  /*
+  if ((_activeSq.unit.move_cur === 0) && (_activeSq.unit.has_attacked == 1)) {
+    _activeSq = null;
+    deselectUnit(_activeSq);
+    return;
+  }
+  */
+
+  // store this on way out
+  _activeSq = sq;
+  alertMessage("active square is " + _activeSq.row + ", " + _activeSq.col);
+
+}
+
+// ==========================
+// does what it says
+// ==========================
+function doNothing() {
+  return;
+}
+
+
+
+// ==========================
+// loop through to draw units
+// ==========================
+function drawAllUnits() {
+
+  var x;
+  var y;
+  var unit;
+  var strokeColor;
+  var img;
+
+  for (var ctr = 0; ctr < _mapArray.length; ctr++) {
+
+    unit = _mapArray[ctr].unit;
+
+    if ((unit !== null) && (unit.visible == 1)) {
+
+      // base x and y on the row
+      y = ((_mapArray[ctr].row - 1) * _squareSize) + 9;
+      x = ((_mapArray[ctr].col - 1) * _squareSize) + 9;
+
+      // figure out the color to put around the image
+      strokeColor = getUnitStrokeColor(unit);
+
+      // draw the infantry unit (either squad or platoon)
+      img = getUnitImage(unit);
+
+      // now draw the unit
+      drawUnit(img, strokeColor, x, y);
+
+    }
+  }
+}
+
+// ==========================
+// draw actual map based on initial array
+// ==========================
+function drawMap() {
+  // main canvas and context vars we'll keep using
+
+  _canvas = document.getElementById("myCanvas");
+  _ctx = _canvas.getContext("2d");
+
+  // add the mouse captures
+  _canvas.addEventListener("mousedown", doMouseDown, false);
+  //_canvas.addEventListener("mousemove", doMouseOver, false);
+
+  // wait until all images are actually loaded before drawing on the map
+  _imgInfPlatoon.onload = function() {
+    drawAllUnits();
+  };
+
+  // walk through and draw the actual map squares
+  for (var row = 1; row <= _rows; row++) {
+    for (var col = 1; col <= _cols; col++) {
+
+      x = (row - 1) * _squareSize;
+      y = (col - 1) * _squareSize;
+
+      _ctx.beginPath();
+      _ctx.strokeStyle = "black";
+      _ctx.fillStyle = _mapArray[getArrayPosforRowCol(_mapArray, row, col)].color;
+      _ctx.rect(y, x, _squareSize, _squareSize);
+      _ctx.fill();
+      _ctx.stroke();
+
+      if (_debugOn) {
+        _ctx.font = "8px";
+        _ctx.fillStyle = "#0000";
+        _ctx.fillText(row + "," + col, y + 2, x + 10);
+        _ctx.strokeText(row + "," + col,  y + 2, x + 10);
+      }
+
+      _ctx.closePath();
+
+    }
+
+  }
+
+  // set all the image sources
+  _imgSniperTeam.src = "sniper_team_34x28.png";
+  _imgMGTeam.src = "mg_team_34x28.png";
+  _imgMortarSection.src = "mortar_section_34x28.png";
+  _imgHQ.src = "hq_section_34x28.png";
+  _imgInfSquad.src = "inf_squad_34x28.png";
+  _imgInfPlatoon.src = "inf_platoon_34x28.png";
+
+   // give images two additional seconds to load
+  setTimeout(doNothing, 2000);
+
+}
+
+// ==========================
+// draw out specified square with terrain color
+// ==========================
+function drawMapSquare(sq) {
+
+  var x = (sq.row - 1) * _squareSize;
+  var y = (sq.col - 1) * _squareSize;
+
+  _ctx.beginPath();
+  _ctx.lineWidth = 1;
+  _ctx.strokeStyle = "black";
+  _ctx.fillStyle = sq.color;
+  _ctx.rect(y, x, _squareSize, _squareSize);
+  _ctx.fill();
+  _ctx.stroke();
+
+  if (_debugOn) {
+    _ctx.font = "8px";
+    _ctx.fillStyle = "#0000";
+    _ctx.fillText(sq.row + "," + sq.col, y + 2, x + 10);
+    _ctx.strokeText(sq.row + "," + sq.col,  y + 2, x + 10);
+  }
+
+
+  _ctx.closePath();
+
+}
+
+
+// ==========================
+// draw unit type at specified location
+// ==========================
+function drawUnit(img, strokeColor, x, y) {
+
+  // everything else remains the same
+  _ctx.beginPath();
+  _ctx.lineWidth = 3;
+  _ctx.strokeStyle = strokeColor;
+  _ctx.drawImage(img, x, y);
+  _ctx.rect(x - 1, y - 1, 35, 29);
+  _ctx.stroke();
+
+}
+
+// ==========================
+// when player ends their turn, activate switch turn logic
+// ==========================
+function endTurn() {
+  switchTurn();
 }
 
 // ==========================
@@ -83,8 +663,168 @@ function getArrayPosforRowCol(arr, row, col) {
   }
 }
 
+
 // ==========================
-// see if there is already a unit in this spot on the map 
+// return distance between two squares
+// ==========================
+function getDistanceBetweenSquares(x1, y1, x2, y2) {
+  var dx = Math.abs(x2 - x1);
+  var dy = Math.abs(y2 - y1);
+  var min = Math.min(dx, dy);
+  var max = Math.max(dx, dy);
+  var diagonalSteps = min;
+  var straightSteps = max - min;
+
+  return Math.floor(Math.sqrt(2) * diagonalSteps + straightSteps);
+
+}
+
+// ==========================
+// get coordinates based on canvas rectangle, not the page or screen
+// ==========================
+function getMousePos(canvas, evt) {
+  var rect = canvas.getBoundingClientRect();
+  return {
+    x: Math.round(evt.clientX - rect.left),
+    y: Math.round(evt.clientY - rect.top)
+  };
+}
+
+
+// ==========================
+// used to determine random starting position on map
+// ==========================
+function getRandomNum(min, max) {
+  return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+// ==========================
+// return the img to use for the unit
+// ==========================
+function getUnitImage(unit) {
+
+  var img = null;
+
+  if (unit.type == "Infantry") {
+    if (unit.size == "Squad") {
+      img = _imgInfSquad;
+    } else {
+      img = _imgInfPlatoon;
+    }
+  }
+  if (unit.type == "MG") {
+    img = _imgMGTeam;
+  }
+  if (unit.type == "Mortar") {
+    img = _imgMortarSection;
+  }
+  if (unit.type == "HQ") {
+    img = _imgHQ;
+  }
+  if (unit.type == "Sniper") {
+    img = _imgSniperTeam;
+  }
+
+  return img;
+
+}
+
+
+
+// ==========================
+// return whether ai or human
+// ==========================
+function getUnitPlayer(sq) {
+  return sq.unit.player;
+
+}
+
+// ==========================
+// return the unit's stroke color
+// ==========================
+function getUnitStrokeColor(unit) {
+
+  var strokeColor = null;
+
+  if (unit.player == "ai") {
+    strokeColor = "#c0c0c0"; // ai always shows grey
+  } else {
+    if (unit.eff == 3) {
+      strokeColor = "#00ff00";
+    }
+    if (unit.eff == 2) {
+      strokeColor = "#ffff00";
+    }
+    if (unit.eff == 1) {
+      strokeColor = "#ff0000";
+    }
+    if (unit.eff === 0) {
+      strokeColor = "#000000";
+    }
+  }
+
+  return strokeColor;
+
+}
+
+
+// ==========================
+// use row and col to figure out actual x and y position
+// ==========================
+function getUnitXY(sq) {
+
+  var x = 0;
+  var y = 0;
+  var t = null;
+
+  y = ((sq.row - 1) * _squareSize) + 9;
+  x = ((sq.col - 1) * _squareSize) + 9;
+  t = new Tuple(x, y);
+  return t;
+
+}
+
+// ==========================
+// is the toSq map spot adjaent to the fromSqu?
+// ==========================
+function isAdjacent(fromSq, toSq) {
+
+  var fromRow = fromSq.row;
+  var fromCol = fromSq.col;
+  var adjacent = false;
+  var t1 = null;
+  var t2 = null;
+
+  // create tuple for where user clicked
+  t = new Tuple(toSq.row, toSq.col);
+
+  // loop through to find all possible combinations
+  for (var r = fromRow - 1; r < fromRow + 2; r++) {
+    for (var c = fromCol - 1; c < fromCol + 2; c++) {
+      // make sure within grid bounds
+      if ((r > 0) && (r <= _rows) && (c > 0) && (c <= _cols)) {
+        if ((r == toSq.row) && (c == toSq.col)) {
+          adjacent = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return adjacent;
+
+}
+
+// ==========================
+// is there a unit in this spot?
+// ==========================
+function isEmpty(sq) {
+  return (sq.unit === null);
+
+}
+
+// ==========================
+// see if there is already a unit in this spot on the map
 // ==========================
 function isMapSpotTaken(a, t) {
 
@@ -106,212 +846,67 @@ function isMapSpotTaken(a, t) {
   return retVal;
 }
 
-// ==========================
-// get coordinates based on canvas rectangle, not the page or screen
-// ==========================
-function getMousePos(canvas, evt) {
-  var rect = canvas.getBoundingClientRect();
-  return {
-    x: Math.round(evt.clientX - rect.left),
-    y: Math.round(evt.clientY - rect.top)
-  };
-}
 
 // ==========================
-// set up the game itself
+// move the unit
 // ==========================
-function switchTurn() {
+function moveUnit(fromSq, toSq) {
 
-  var txt = "";
-  var sq = null;
+  alertMessage("*** moveUnit ***");
 
-  // loop through all the units and reset move, attack and supression flag
-  for (var x = 0; x < _mapArray.length; x++) {
-    if (_mapArray[x].unit != null) {
-      sq = _mapArray[x];
-      sq.unit.move_cur = sq.unit.move_max;
-      sq.unit.is_suppressed = 0;
-      sq.unit.has_attacked = 0;
-      _mapArray[x].sq = sq;
-    }
-  }
-
-  // increment the turn counter and flip whose turn it is
-  _turnNumber++;
-  txt = "Turn #" + _turnNumber + ":&nbsp;";
-  if (_turnCurrent == "ai") {
-    _turnCurrent = "player";
-    txt += "Player's ";
-  } else {
-    _turnCurrent = "ai";
-    txt += "Computer's ";
-  }
-
-  // finish the div text 
-  txt += "Turn";
-  document.getElementById("lblTurnText").innerHTML = txt;
-
-  // flip around the images 
-  if (_turnCurrent == "ai") {
-    document.getElementById("imgEndTurn").src = "end_turn_inactive_40x80.png";
-  } else {
-    document.getElementById("imgEndTurn").src = "end_turn_active_40x80.png";
-  }
-
-  // if we flipped to ai, need to jump out
-  if (_turnCurrent == "ai") {
-    doComputerTurn();
-  }
-
-
-}
-
-// ==========================
-// computer turn
-// ==========================
-function doComputerTurn() {
-
-  alertMessage("*** doComputerTurn ***");
-  
+  var posFrom = 0;
+  var posTo = 0;
   var unit = null;
-  var row = 0;
-  var col = 0;
+  var sq = null;
   var x = 0;
   var y = 0;
-  var adjRow = 0;
-  var adjCol = 0;
-  var agg = 0;
-  var doMove = true; 
-  var justAttacked = false;
-  var currentSq = null;
-  var targetSq = null;
-  var ctr = 0; 
-  
-  // for computer, deselect any player units and get rid of active square
-  deselectUnit(_activeSq);
-  _activeSq = null;
-  // clear text labels
-  clearTerrainText();
-  clearUnitText();
 
-  // iterate through enemy units, looking for ones not suppressed and not on black effectiveness
-  for (ctr = 0; ctr < _mapArray.length; ctr++) {
-    unit = _mapArray[ctr].unit;
-    //currentSq = _mapArray[ctr];
-    
-    // get the row and pos
-    row = _mapArray[ctr].row;
-    col = _mapArray[ctr].col;
-    
-    if ((unit !== null) && (unit.player == "ai") && (unit.is_suppressed === 0) && (unit.eff !== 0)) {
-      // first, is there a unit adjacent to it? if yes, and can attack, attack; if attacked, make unit visible
-      alertMessage("found a unit: " + unit.name);
-      justAttacked = false;
-      // set flag we want them to move later
-      doMove = true;
-      for (x = -1; x <= 1; x++) {
-        
-        // quick hack; if they attacked, broke out of inner loop but now we need to break out of outer loop
-        if (justAttacked) {
-          break;
-        }
-        
-        for (y = -1; y <= 1; y++ ) {
-          adjRow = (row + x);
-          adjCol = (col + y);
-          // make sure we didn't go out of bounds
-          if (adjRow < 1) {
-            adjRow = 1;
-          }
-          if (adjRow > _rows) {
-            adjRow = _rows;
-          }
-          if (adjCol < 1) {
-            adjCol = 1;
-          }
-          if (adjCol > _cols) {
-            adjCol = _cols;
-          }
-          
-          // get the map array pos for row 
-          pos = getArrayPosforRowCol(_mapArray, adjRow, adjCol);
-          // is there a player unit there? 
-          if ((pos !== undefined) && (_mapArray[pos].unit !== null) && (_mapArray[pos].unit.player == "human")) {
-               // attack!
-              alertMessage("next to a player unit, so going to attack row " + adjRow + ", col " + adjCol);
-               doAttack(unit, _mapArray[pos], pos);
-              // make the attackimg unit visible and set their attacked flag
-              _mapArray[ctr].unit.has_attacked = 1;
-              _mapArray[ctr].unit.visible = 1;
-              // they don't want to move away from player unit, do set flag
-              doMove = false; 
-              justAttacked = true;
-              // break out of loop, we're done
-              break;
-          }
-          else {
-            // not next to player unit, but is there one within range? 
-            if (unit.range > 1) {
-              // go look for unit's within range
-              // long way -- iterate through map, check each square, see if has a player unit and they are
-              // within range; if so, attack
-              for (var z = 0; z < _mapArray.length; z++) {
-                targetSq = _mapArray[z];
-                if ((targetSq.unit != null) && (targetSq.unit.player = "human") && 
-                      (getDistanceBetweenSquares(row, col, targetSq.row, targetSq.col) <= unit.range)) {
-                      alertMessage("*** would be able to attack ***");
-              }
-            }
-          }
-        }
-       }
-      }
-    // if not, determie how aggressive (if aggressive, find nearest friendly unit and move towards them; 
-    // if not aggressive, stay still); sniper units will be less aggressive in general; if moved, 
-    // make unit visible
-    /*
-      else {
-      agg = getRandomNum(10);
-      // mod that num based on unit type 
-      if ((unit !== null) && (unit.type == "sniper")) {
-        agg--;
-      }
-    */
-      
-    }
-      
-    // figure out movement
-    if (doMove) {
-        // loop through map array, finding player units, see how far and just keep closest  
-        alertMessage("*** in doMove ***");
-    }
-    
-      // now, after moving, anything next to it? Again, if yes, attack; if attacked, make unit visible 
-      
-      // if not, see if anything within range (for MG or sniper); if yes. attack; if attacked, 
-      // make unit visible 
-      
-      // add in artificial delay 
-      
-      // finally, if not next to another unit, percentage chance it is no longer visible 
-      
-    
+  // first, update the array so new map
+  posFrom = getArrayPosforRowCol(_mapArray, fromSq.row, fromSq.col);
+  posTo = getArrayPosforRowCol(_mapArray, toSq.row, toSq.col);
+
+  // store what was there, then null it out
+  sq = _mapArray[posFrom];
+  unit = sq.unit;
+  sq.unit = null;
+  _mapArray[posFrom].sq = sq;
+
+  // redraw the map square to overwrite the unit
+  drawMapSquare(sq);
+
+  // now, drop that unit into the new square
+  sq = _mapArray[posTo];
+  sq.unit = unit;
+  _mapArray[posTo].sq = sq;
+
+  // take the unit and drop off one move, unless moving into rocky, then drop two
+  if (sq.type == "Rocky") {
+     unit.move_cur -= 3;
   }
-  
-  
-  
-  
-  setTimeout(switchTurn, 3000);
+  else if (sq.type == "Brush") {
+      unit.move_cur -= 2;
+  }
+  else {
+    unit.move_cur -= 1;
+  }
+  if (unit.move_cur < 0) {
+    unit.move_cur = 0;
+  }
 
-  // walk through all units and reset the flags
-  for (ctr = 0; ctr < _mapArray.length; ctr++) {
-    unit = _mapArray[ctr].unit;
-    if (unit !== null) {
-      _mapArray[ctr].unit.has_attacked = 0;
-    }
-  }  
-  
+  // finally, re-draw the unit at the new spot
+  y = ((sq.row - 1) * _squareSize) + 9;
+  x = ((sq.col - 1) * _squareSize) + 9;
+
+  // draw the infantry unit (either squad or platoon)
+  img = getUnitImage(unit);
+  drawUnit(img, _strokeColorHighlight, x, y);
+  setUnitText(unit);
+
+  alertMessage("unit " + unit.name + " moved to row " + toSq.row + ", col " + toSq.col);
+  setActionText("Unit " + unit.name + " moved to row " + toSq.row + ", col " + toSq.col);
+
 }
+
 
 
 // ==========================
@@ -356,21 +951,6 @@ function setupMapArray() {
 
 }
 
-// ==========================
-// use row and col to figure out actual x and y position
-// ==========================
-function getUnitXY(sq) {
-
-  var x = 0;
-  var y = 0;
-  var t = null;
-
-  y = ((sq.row - 1) * _squareSize) + 9;
-  x = ((sq.col - 1) * _squareSize) + 9;
-  t = new Tuple(x, y);
-  return t;
-
-}
 
 
 // ==========================
@@ -401,34 +981,9 @@ function selectUnit(sq, pos) {
 
 }
 
-// ==========================
-// loop through all units and make sure none are active
-// ==========================
-function deselectUnit(sq) {
 
-  var t = null;
 
-  // ignore if no active square
-  if ((sq !== null) && (sq.unit !== null)) {
-    sq.unit.active = 0;
-    // draw that unit with regular color
-    strokeColor = getUnitStrokeColor(sq.unit);
-    img = getUnitImage(sq.unit);
-    t = getUnitXY(sq);
-    drawUnit(img, strokeColor, t[0], t[1]);
-    // update the main array
-    _mapArray[pos] = sq;
-    // clear out any text
-    clearUnitText();
-  }
-}
 
-// ==========================
-// clear out last action
-// ==========================
-function clearActionText() {
-  document.getElementById("lblAction").innerHTML = "";
-}
 
 // ==========================
 // set action text
@@ -437,19 +992,7 @@ function setActionText(txt) {
   document.getElementById("lblAction").innerHTML = txt;
 }
 
-// ==========================
-// clear out terrain text
-// ==========================
-function clearTerrainText() {
-  //document.getElementById("lblTerrain").innerHTML = "";
-}
 
-// ==========================
-// clear out unit text
-// ==========================
-function clearUnitText() {
-  document.getElementById("lblUnit").innerHTML = "";
-}
 
 // ==========================
 // show terrain text
@@ -529,577 +1072,33 @@ function setUnitText(unit) {
   document.getElementById("lblUnit").innerHTML = txt;
 }
 
-// ==========================
-// is there a unit in this spot? 
-// ==========================
-function isEmpty(sq) {
-  return (sq.unit === null);
 
-}
 
-// ==========================
-// return whether ai or human
-// ==========================
-function getUnitPlayer(sq) {
-  return sq.unit.player;
 
-}
 
-// ==========================
-// is the toSq map spot adjaent to the fromSqu?
-// ==========================
-function isAdjacent(fromSq, toSq) {
 
-  var fromRow = fromSq.row;
-  var fromCol = fromSq.col;
-  var adjacent = false;
-  var t1 = null;
-  var t2 = null;
 
-  // create tuple for where user clicked
-  t = new Tuple(toSq.row, toSq.col);
 
-  // loop through to find all possible combinations
-  for (var r = fromRow - 1; r < fromRow + 2; r++) {
-    for (var c = fromCol - 1; c < fromCol + 2; c++) {
-      // make sure within grid bounds
-      if ((r > 0) && (r <= _rows) && (c > 0) && (c <= _cols)) {
-        if ((r == toSq.row) && (c == toSq.col)) {
-          adjacent = true;
-          break;
-        }
-      }
-    }
-  }
 
-  return adjacent;
 
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // ==========================
-// draw out specified square with terrain color
-// ==========================
-function drawMapSquare(sq) {
-
-  var x = (sq.row - 1) * _squareSize;
-  var y = (sq.col - 1) * _squareSize;
-
-  _ctx.beginPath();
-  _ctx.lineWidth = 1;
-  _ctx.strokeStyle = "black";
-  _ctx.fillStyle = sq.color;
-  _ctx.rect(y, x, _squareSize, _squareSize);
-  _ctx.fill();
-  _ctx.stroke();
-  
-  if (_debugOn) {
-    _ctx.font = "8px";
-    _ctx.fillStyle = "#0000";
-    _ctx.fillText(sq.row + "," + sq.col, y + 2, x + 10);
-    _ctx.strokeText(sq.row + "," + sq.col,  y + 2, x + 10);
-  }
-
-  
-  _ctx.closePath();
-
-}
-
-// ==========================
-// move the unit
-// ==========================
-function moveUnit(fromSq, toSq) {
-
-  alertMessage("*** moveUnit ***");
-  
-  var posFrom = 0;
-  var posTo = 0;
-  var unit = null;
-  var sq = null;
-  var x = 0;
-  var y = 0;
-  
-  // first, update the array so new map 
-  posFrom = getArrayPosforRowCol(_mapArray, fromSq.row, fromSq.col);
-  posTo = getArrayPosforRowCol(_mapArray, toSq.row, toSq.col);
-
-  // store what was there, then null it out
-  sq = _mapArray[posFrom];
-  unit = sq.unit;
-  sq.unit = null;
-  _mapArray[posFrom].sq = sq;
-
-  // redraw the map square to overwrite the unit
-  drawMapSquare(sq);
-
-  // now, drop that unit into the new square
-  sq = _mapArray[posTo];
-  sq.unit = unit;
-  _mapArray[posTo].sq = sq;
-
-  // take the unit and drop off one move, unless moving into rockey, then drop two
-  if (sq.type == "Rocky") {
-     unit.move_cur -= 2;   
-  }
-  else {
-    unit.move_cur -= 1;
-  }
-  if (unit.move_cur < 0) {
-    unit.move_cur = 0;
-  }
-  
-  // finally, re-draw the unit at the new spot 
-  y = ((sq.row - 1) * _squareSize) + 9;
-  x = ((sq.col - 1) * _squareSize) + 9;
-
-  // draw the infantry unit (either squad or platoon)
-  img = getUnitImage(unit);
-  drawUnit(img, _strokeColorHighlight, x, y);
-  setUnitText(unit);
-
-  alertMessage("unit " + unit.name + " moved to row " + toSq.row + ", col " + toSq.col);
-  setActionText("Unit " + unit.name + " moved to row " + toSq.row + ", col " + toSq.col);
-
-}
-
-// ==========================
-// attack function 
-// ==========================
-function doAttack(friendlyUnit, targetSq, pos) {
-
-  alertMessage("*** do Attack ***");
-  
-  var terrainMod = 0;
-  var attackNum = 0;
-  var damage = 0;
-  var roll = 0;
-  var enemyUnit = null;
-  var arrayPos = 0;
-  var effMod = 0;
-  var strokeColor = "";
-  var img = null;
-  var t = null;
-  var attackMsg = "";
-  
-  // store enemy unit
-  enemyUnit = targetSq.unit;
-
-  // if enemy wasn't already visible, draw the unit make it visible
-  if (enemyUnit.visible === 0) {
-    enemyUnit.visible = 1;
-    strokeColor = getUnitStrokeColor(sq.unit);
-    img = getUnitImage(sq.unit);
-    t = getUnitXY(sq);
-    drawUnit(img, strokeColor, t[0], t[1]);
-
-  }
-
-  // set the has_attacked property to 1
-  friendlyUnit.has_attacked = 1;
-  _mapArray[pos].sq = friendlyUnit;
-
-  // quick check, if combat effectivenss is "black" (0), just bail
-  if (friendlyUnit.eff === 0) {
-    return;
-  }
-
-  // need to determine attack number; this is unit attack base - effectiveness modifier - terrain modifier 
-  if ((targetSq.terrain == "Woods") || (targetSq.terrain == "Rocky")) {
-    terrainMod = -1;
-  }
-
-  if (friendlyUnit.eff == 1) {
-    effMod = -2;
-  } else if (friendlyUnit.eff == 2) {
-    effMod = -1;
-  }
-
-  attackNum = friendlyUnit.attack - effMod - terrainMod;
-
-  // pick a random number from 1 - 10 and see if attack num is below that 
-  roll = getRandomNum(1, 10);
-
-  alertMessage("attackNum: " + attackNum + ", roll: " + roll);
-
-  // if enemy unit attacking, want to have more information in the attack message
-  if (friendlyUnit.player == "ai") {
-    attackMsg = "The enemy " + friendlyUnit.type + " " + friendlyUnit.size + " attacked your " + targetSq.unit.type + " " + targetSq.unit.size + ". ";
-  }
-  
-  
-  if (roll <= attackNum) {
-    // hit!
-    damage = getRandomNum(1, 10);
-    alertMessage("damage: " + damage);
-    if (damage <= 8) {
-      enemyUnit.eff--;
-      alertMessage("Unit " + enemyUnit.name + " lost effectiveness, now at " + enemyUnit.eff);
-      attackMsg += "The unit was hit and took damage.";
-    }
-
-    // certain types of unit cause supression
-    if ((friendlyUnit.type == "mg") || (friendlyUnit.type == "sniper") || (friendlyUnit.type == "mortar")) {
-      enemyUnit.is_suppressed = 1;
-      alertMessage("unit supressed!");
-      attackMsg += " It was also suppressed (no movement or attack possible).";
-    }
-
-  }
-  else {
-    // not hit, but still want to post message
-    attackMessage = "The unit was attacked but was not hit."
-    
-  }
-  
-  // update text (since we attacked)
-  if (friendlyUnit.player == "human") {
-    setUnitText(friendlyUnit);
-  }
-
-  // if enemy unit has gone to black, just get rid of it. 
-  arrayPos = getArrayPosforRowCol(_mapArray, targetSq.row, targetSq.col);
-  if ((enemyUnit.eff === 0) && (enemyUnit.player == "ai")) {
-    alertMessage("unit " + targetSq.unit.name + " at row " + targetSq.row + ", col " + targetSq.col + " eliminated!");
-    attackMsg += "Unit is no longer combat effective!";
-    _mapArray[arrayPos].unit = null;
-    // redraw that map square since unit gone
-    drawMapSquare(targetSq);
-  } else {
-    // update the unit that was attacked 
-    _mapArray[arrayPos].unit = enemyUnit;
-  }
-
-  setActionText(attackMsg);
-
-  // pop-up if unit lost effectiveness
-  //if (attackMsg !== "") {
-  //  alert(attackMsg);
-  //}
-  
-}
-
-// ==========================
-// does what it says
-// ==========================
-function doNothing() {
-  return;
-}
-
-
-// ==========================
-// capture mouse down  
-// ==========================
-function doMouseDown(evt) {
-
-  var pos = 0;
-  var sq = null;
-  var unit = null;
-  var t = null;
-  var row = 0;
-  var col = 0;
-
-  // get the x and y based on canvas rectangle
-  var mousePos = getMousePos(document.getElementById("myCanvas"), evt);
-
-  // now, figure out where we are at
-  row = Math.floor(mousePos.y / _squareSize + 1);
-  col = Math.floor(mousePos.x / _squareSize + 1);
-  pos = getArrayPosforRowCol(_mapArray, row, col);
-  sq = _mapArray[pos];
-  if (sq.unit !== null) {
-    unit = sq.unit;
-  }
-  
-  alertMessage("User clicked into row " + row + ", col " + col);
-  
-  // show some terrain info 
-  setTerrainText(sq.type);
-
-  // is there already an active square and same as what we just clicked?
-  if ((_activeSq !== null) && (_activeSq == sq)) {
-    alertMessage("_activeSq and sq are the same");
-    // if there is an already selected unit in it, we want to deselect that unit
-    if ((unit !== null) && (unit.active == 1)) {
-      alertMessage("already an active unit here");
-      deselectUnit(sq);
-      clearUnitText();
-      _activeSq = null;
-      return;
-    }
-  }
-
-  // clicked on a unit, but it is an enemy that is visible
-  if ((_activeSq === null) && (unit !== null) && (unit.player == "ai") && (unit.visible == 1)) {
-    alertMessage("clicked on visible enemy unit");
-    // it is an enemy unit, so can show some things (but not all)
-    setUnitText(unit);
-    setActionText("Selected " + unit.name);
-    _activeSq = null;
-    return;
-  }
-  
-  
-  // if no active square, and there's a player's unit, make it active 
-  if ((_activeSq === null) && (unit !== null) && (unit.player == "human") && (unit.active === 0)) {
-    alertMessage("no active square and clicked on player unit " + unit.name);
-    // if the unit is not active, make it so
-    selectUnit(sq, pos);
-    // set display text
-    setUnitText(unit);
-    setActionText("Selected " + unit.name);
-    // store as well
-    _activeSq = sq;
-    // can just leave now
-    return;
-
-  }
-  
-  // if active square, is the current seelcted square adjacent?
-  if ((_activeSq !== null) && (isAdjacent(_activeSq, sq))) {
-    alertMessage("active square and selected square is adjacent");
-    alertMessage("adjacent square isEmpty? " + isEmpty(sq));
-    // if empty and unit has move left, move there
-    if ((isEmpty(sq)) && (_activeSq.unit !== null) && (_activeSq.unit.move_cur > 0)) {
-      moveUnit(_activeSq, sq);
-    }
-    // if not empty, and there is friendly there, just bail 
-    else if ((!isEmpty(sq)) && (sq.unit.player == "human")) {
-      alertMessage("friendly in our way ... switch over to that unit");
-      selectUnit(sq, pos);
-      setUnitText(sq.unit);
-      setActionText("Selected " + sq.unit.name);
-      deselectUnit(_activeSq);
-    }
-    // if not empty, there is enemy and haven't attacked yet, attack
-    else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 0)) {
-      doAttack(_activeSq.unit, sq, pos);
-      // don't swap out acive square
-      return;
-    }
-    // if not empty, there is enemy but we have attacked, just bail 
-    else if ((!isEmpty(sq)) && (sq.unit.player == "ai") && (_activeSq.unit.has_attacked === 1)) {
-      alertMessage("enemy there but already attacked ... bail");
-      return;
-    }
-
-  } else if ((_activeSq !== null) && (!isAdjacent(_activeSq, sq))) {
-    alertMessage("active square and selected square is not adjacent");
-    // if human player in spot, make that unit active
-    if ((sq.unit !== null) && (sq.unit.player == "human")) {
-      // deselect any other unit
-      deselectUnit(_activeSq);
-      selectUnit(sq);
-      setActionText("Selected " + sq.unit.name);
-    } else {
-      // is there an enemy player there, within range and we haven't attacked yet? 
-      if ((sq.unit !== null) && (sq.unit.player == "ai") && (_activeSq.unit !== null) && (_activeSq.unit.has_attacked === 0)) {
-        alertMessage("enemy player in square and we haven't attacked yet");
-        // what is the range? 
-        if (getDistanceBetweenSquares(_activeSq.row, _activeSq.col, sq.row, sq.col) <= _activeSq.unit.range) {
-          alertMessage("enemy within range, about to attack!");
-          // actually can do an attack
-          doAttack(_activeSq.unit, sq, pos);
-        }
-        // jump out because we want to keep active square the unit that attacked
-        return;
-        
-      } else {
-        // nope, just don't set an active square and bail, but deselect any active unit first
-        deselectUnit(_activeSq);
-        clearActionText();
-        _activeSq = null;
-        return;
-
-      }
-    }
-
-  }
-
-
-  // if we got this far and the active unit has no movement or attack left, deselect it
-  /*
-  if ((_activeSq.unit.move_cur === 0) && (_activeSq.unit.has_attacked == 1)) {
-    _activeSq = null;
-    deselectUnit(_activeSq);
-    return;
-  }
-  */
-
-  // store this on way out
-  _activeSq = sq;
-  alertMessage("active square is " + _activeSq.row + ", " + _activeSq.col);
-
-}
-
-
-// ==========================
-// draw actual map based on initial array 
-// ==========================
-function drawMap() {
-  // main canvas and context vars we'll keep using  
-
-  _canvas = document.getElementById("myCanvas");
-  _ctx = _canvas.getContext("2d");
-
-  // add the mouse captures 
-  _canvas.addEventListener("mousedown", doMouseDown, false);
-  //_canvas.addEventListener("mousemove", doMouseOver, false);
-  
-  // wait until all images are actually loaded before drawing on the map
-  _imgInfPlatoon.onload = function() {
-    drawAllUnits();
-  };
-
-  // walk through and draw the actual map squares 
-  for (var row = 1; row <= _rows; row++) {
-    for (var col = 1; col <= _cols; col++) {
-
-      x = (row - 1) * _squareSize;
-      y = (col - 1) * _squareSize;
-
-      _ctx.beginPath();
-      _ctx.strokeStyle = "black";
-      _ctx.fillStyle = _mapArray[getArrayPosforRowCol(_mapArray, row, col)].color;
-      _ctx.rect(y, x, _squareSize, _squareSize);
-      _ctx.fill();
-      _ctx.stroke();
-      
-      if (_debugOn) {
-        _ctx.font = "8px";
-        _ctx.fillStyle = "#0000";
-        _ctx.fillText(row + "," + col, y + 2, x + 10);
-        _ctx.strokeText(row + "," + col,  y + 2, x + 10);
-      }
-      
-      _ctx.closePath();
-
-    }
-
-  }
-
-  // set all the image sources 
-  _imgSniperTeam.src = "sniper_team_34x28.png";
-  _imgMGTeam.src = "mg_team_34x28.png";
-  _imgMortarSection.src = "mortar_section_34x28.png";
-  _imgHQ.src = "hq_section_34x28.png";
-  _imgInfSquad.src = "inf_squad_34x28.png";
-  _imgInfPlatoon.src = "inf_platoon_34x28.png";
-
-   // give images two additional seconds to load
-  setTimeout(doNothing, 2000);
-  
-}
-
-// ==========================
-// draw unit type at specified location
-// ==========================
-function drawUnit(img, strokeColor, x, y) {
-
-  // everything else remains the same 
-  _ctx.beginPath();
-  _ctx.lineWidth = 3;
-  _ctx.strokeStyle = strokeColor;
-  _ctx.drawImage(img, x, y);
-  _ctx.rect(x - 1, y - 1, 35, 29);
-  _ctx.stroke();
-
-}
-
-// ==========================
-// return the img to use for the unit
-// ==========================
-function getUnitImage(unit) {
-
-  var img = null;
-
-  if (unit.type == "Infantry") {
-    if (unit.size == "Squad") {
-      img = _imgInfSquad;
-    } else {
-      img = _imgInfPlatoon;
-    }
-  }
-  if (unit.type == "MG") {
-    img = _imgMGTeam;
-  }
-  if (unit.type == "Mortar") {
-    img = _imgMortarSection;
-  }
-  if (unit.type == "HQ") {
-    img = _imgHQ;
-  }
-  if (unit.type == "Sniper") {
-    img = _imgSniperTeam;
-  }
-
-  return img;
-
-}
-
-// ==========================
-// return the unit's stroke color
-// ==========================
-function getUnitStrokeColor(unit) {
-
-  var strokeColor = null;
-
-  if (unit.player == "ai") {
-    strokeColor = "#c0c0c0"; // ai always shows grey
-  } else {
-    if (unit.eff == 3) {
-      strokeColor = "#00ff00";
-    }
-    if (unit.eff == 2) {
-      strokeColor = "#ffff00";
-    }
-    if (unit.eff == 1) {
-      strokeColor = "#ff0000";
-    }
-    if (unit.eff === 0) {
-      strokeColor = "#000000";
-    }
-  }
-
-  return strokeColor;
-
-}
-
-// ==========================
-// loop through to draw units 
-// ==========================
-function drawAllUnits() {
-
-  var x;
-  var y;
-  var unit;
-  var strokeColor;
-  var img;
-
-  for (var ctr = 0; ctr < _mapArray.length; ctr++) {
-
-    unit = _mapArray[ctr].unit;
-
-    if ((unit !== null) && (unit.visible == 1)) {
-
-      // base x and y on the row 
-      y = ((_mapArray[ctr].row - 1) * _squareSize) + 9;
-      x = ((_mapArray[ctr].col - 1) * _squareSize) + 9;
-
-      // figure out the color to put around the image 
-      strokeColor = getUnitStrokeColor(unit);
-
-      // draw the infantry unit (either squad or platoon)
-      img = getUnitImage(unit);
-
-      // now draw the unit
-      drawUnit(img, strokeColor, x, y);
-
-    }
-  }
-}
-
-// ==========================
-// build start position for friendly units 
+// build start position for friendly units
 // ==========================
 function setupFriendlies() {
 
@@ -1183,8 +1182,8 @@ function setupFriendlies() {
     player: "human",
     visible: 1,
     active: 0,
-    move_max: 2,
-    move_cur: 2,
+    move_max: 3,
+    move_cur: 3,
     range: 3,
     has_attacked: 0,
     is_suppressed: 0,
@@ -1205,8 +1204,8 @@ function setupFriendlies() {
     player: "human",
     visible: 1,
     active: 0,
-    move_max: 2,
-    move_cur: 2,
+    move_max: 3,
+    move_cur: 3,
     range: 5,
     has_attacked: 0,
     is_suppressed: 0,
@@ -1243,7 +1242,7 @@ function setupFriendlies() {
 }
 
 // ==========================
-// set up bad guys 
+// set up bad guys
 // ==========================
 function setupOpfor() {
 
@@ -1261,7 +1260,7 @@ function setupOpfor() {
   _mgTeams = getRandomNum(0, 3);
   // subtract out mg sections
   _rifleSquads = _rifleSquads - _mgTeams;
-  // tack on a possible sniper team 
+  // tack on a possible sniper team
   _sniperTeams = getRandomNum(0, 1);
 
   // for each rifle squad, pick a random spot for them to start
@@ -1325,8 +1324,8 @@ function setupOpfor() {
       player: "ai",
       visible: 1,
       active: 0,
-      move_max: 2,
-      move_cur: 2,
+      move_max: 3,
+      move_cur: 3,
       range: 3,
       has_attacked: 0,
       is_suppressed: 0,
@@ -1338,7 +1337,7 @@ function setupOpfor() {
     sq = _mapArray[pos];
     sq.unit = unit;
     _mapArray[pos] = sq;
-    
+
   }
 
   // repeat for each sniper team
@@ -1363,8 +1362,8 @@ function setupOpfor() {
       player: "ai",
       visible: 1,
       active: 0,
-      move_max: 2,
-      move_cur: 2,
+      move_max: 3,
+      move_cur: 3,
       range: 5,
       has_attacked: 0,
       is_suppressed: 0,
@@ -1381,3 +1380,57 @@ function setupOpfor() {
   }
 
 }
+
+// ==========================
+// set up the game itself
+// ==========================
+function switchTurn() {
+
+  var txt = "";
+  var sq = null;
+
+  // loop through all the units and reset move, attack and supression flag
+  for (var x = 0; x < _mapArray.length; x++) {
+    if (_mapArray[x].unit != null) {
+      sq = _mapArray[x];
+      sq.unit.move_cur = sq.unit.move_max;
+      sq.unit.is_suppressed = 0;
+      sq.unit.has_attacked = 0;
+      _mapArray[x].sq = sq;
+    }
+  }
+
+  // clear out messages
+  clearActionText();
+
+
+  // increment the turn counter and flip whose turn it is
+  _turnNumber++;
+  txt = "Turn #" + _turnNumber + ":&nbsp;";
+  if (_turnCurrent == "ai") {
+    _turnCurrent = "player";
+    txt += "Player's ";
+  } else {
+    _turnCurrent = "ai";
+    txt += "Computer's ";
+  }
+
+  // finish the div text
+  txt += "Turn";
+  document.getElementById("lblTurnText").innerHTML = txt;
+
+  // flip around the images
+  if (_turnCurrent == "ai") {
+    document.getElementById("imgEndTurn").src = "end_turn_inactive_40x80.png";
+  } else {
+    document.getElementById("imgEndTurn").src = "end_turn_active_40x80.png";
+  }
+
+  // if we flipped to ai, need to jump out
+  if (_turnCurrent == "ai") {
+    doComputerTurn();
+  }
+
+
+}
+
