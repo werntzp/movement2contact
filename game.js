@@ -105,6 +105,8 @@ function doAttack(friendlyUnit, targetSq, pos) {
   var img = null;
   var t = null;
   var attackMsg = "";
+  var sound = "";
+  var source = "";
 
   // store enemy unit
   enemyUnit = targetSq.unit;
@@ -145,6 +147,31 @@ function doAttack(friendlyUnit, targetSq, pos) {
   roll = getRandomNum(1, 10);
 
   alertMessage("attackNum: " + attackNum + ", roll: " + roll);
+
+  // play attack sound (based on unit type)
+  if (friendlyUnit.type == "mg") {
+    source = "mg_team.m4a";
+  }
+  else if (friendlyUnit.type == "sniper") {
+    source = "sniper.m4a";
+  }
+  else if (friendlyUnit.type == "mortar") {
+    source = "mortar_section.m4a";
+  }
+  else {
+      // it is inf or hq, so change sound depending on size
+      if (friendlyUnit.size == "Platoon") {
+          source = "inf_platoon.m4a";
+      }
+      else {
+          source = "inf_squad.m4a";
+      }
+  }
+
+  // play the sound
+  alertMessage("sound file: " + source);
+  sound = new Howl({src: [source]});
+  sound.play();
 
   // if enemy unit attacking, want to have more information in the attack message
   if (friendlyUnit.player == "ai") {
